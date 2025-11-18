@@ -4,6 +4,9 @@ const playerId = 'player_' + Math.random().toString(36).substr(2, 9);
 // Connexion WebSocket
 let ws;
 let isConnected = false;
+let timerInterval = null;
+let timeLeft = 10;
+let canAnswer = true;
 
 function connect() {
     // Auto-détecte si on est en local (ws://) ou en prod (wss://)
@@ -41,6 +44,8 @@ function handleMessage(message) {
     switch (message.type) {
         case 'question':
             displayQuestion(message.data);
+            startTimer(10);
+            canAnswer = true;
             break;
 
         case 'leaderboard_update':
@@ -49,11 +54,91 @@ function handleMessage(message) {
 
         case 'answer_result':
             showFeedback(message.correct, message.message);
+            canAnswer = false;
+            break;
+
+        case 'reveal_answer':
+            revealAnswer(message.answer);
+            break;
+
+        case 'game_over':
+            showGameOver(message.message);
             break;
 
         default:
             console.log('Message non géré:', message);
     }
+}
+
+// Démarrer le timer
+function startTimer(seconds) {
+    timeLeft = seconds;
+    const timerElement = document.getElementById('timer');
+
+    // Arrêter l'ancien timer si existant
+    if (timerInterval) {
+        clearInterval(timerInterval);
+    }
+
+    // Mettre à jour immédiatement
+    updateTimerDisplay();
+
+    // Démarrer le nouveau timer
+    timerInterval = setInterval(() => {
+        timeLeft--;
+        updateTimerDisplay();
+
+        if (timeLeft <= 0) {
+            clearInterval(timerInterval);
+        }
+    }, 1000);
+}
+
+// Mettre à jour l'affichage du timer
+function updateTimerDisplay() {
+    const timerElement = document.getElementById('timer');
+    timerElement.textContent = timeLeft;
+
+    // Changer la couleur selon le temps restant
+    timerElement.className = 'timer';
+    if (timeLeft <= 3) {
+        timerElement.classList.add('danger');
+    } else if (timeLeft <= 5) {
+        timerElement.classList.add('warning');
+    }
+}
+
+// Révéler la réponse
+function revealAnswer(answer) {
+    const feedback = document.getElementById('feedback');
+    feedback.textContent = `La réponse était : ${answer}`;
+    feedback.className = 'feedback';
+    feedback.style.background = '#2196F3';
+    feedback.style.display = 'block';
+
+    setTimeout(() => {
+        feedback.classList.add('hidden');
+    }, 3000);
+
+    canAnswer = false;
+}
+
+// Afficher fin de jeu
+function showGameOver(message) {
+    const feedback = document.getElementById('feedback');
+    feedback.textContent = message;
+    feedback.className = 'feedback';
+    feedback.style.background = '#4caf50';
+    feedback.style.display = 'block';
+
+    // Arrêter le timer
+    if (timerInterval) {
+        clearInterval(timerInterval);
+    }
+
+    // Désactiver l'input
+    document.getElementById('answer-input').disabled = true;
+    document.getElementById('submit-btn').disabled = true;
 }
 
 // Afficher une question
@@ -138,6 +223,11 @@ function submitAnswer() {
         return;
     }
 
+    if (!canAnswer) {
+        alert('Vous avez déjà répondu à cette question !');
+        return;
+    }
+
     // Envoyer la réponse au serveur
     ws.send(JSON.stringify({
         type: 'answer',
@@ -171,16 +261,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Demander le nom du joueur au chargement
 window.addEventListener('load', () => {
-    const playerName = prompt('Entrez votre nom:', `Joueur ${Math.floor(Math.random() * 1000)}`);
-    if (playerName) {
-        // Envoyer le nom au serveur (à implémenter côté backend)
-        setTimeout(() => {
-            if (isConnected) {
-                ws.send(JSON.stringify({
-                    type: 'set_name',
-                    name: playerName
-                }));
-            }
-        }, 1000);
-    }
+    setTimeout(() => {
+        const playerName = prompt('Entrez votre nom:', `Joueur ${Math.floor(Math.random() * 1000)}`);
+        if (playerName && playerName.trim()) {
+            // Attendre que la connexion soit établie
+            const sendName = () => {
+                if (isConnected && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'set_name',
+                        name: playerName.trim()
+                    }));
+                    console.log('Nom envoyé:', playerName.trim());
+                } else {
+                    // Réessayer après 500ms
+                    setTimeout(sendName, 500);
+                }
+            };
+            sendName();
+        }
+    }, 500); // Attendre un peu que la connexion soit établie
 });

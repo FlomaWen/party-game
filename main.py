@@ -15,7 +15,11 @@ class ConnectionManager:
         self.game_state = {
             "players": {},
             "current_question": None,
-            "leaderboard": []
+            "leaderboard": [],
+            "current_question_index": 0,
+            "question_start_time": None,
+            "timer_task": None,
+            "answered_players": set()
         }
 
     async def connect(self, websocket: WebSocket, player_id: str):
@@ -53,15 +57,72 @@ class ConnectionManager:
             "leaderboard": leaderboard
         })
 
-    async def check_answer(self, player_id: str, answer: str):
-        # Logique de vérification de réponse (à adapter selon tes questions)
-        correct_answer = "Bob l'éponge"  # Exemple
+    def get_current_question(self):
+        idx = self.game_state["current_question_index"]
+        if idx < len(QUESTIONS):
+            return QUESTIONS[idx]
+        return None
 
-        if answer.lower().strip() == correct_answer.lower().strip():
-            self.game_state["players"][player_id]["score"] += 10
+    async def start_question_timer(self):
+        """Lance un timer de 10 secondes pour la question"""
+        await asyncio.sleep(10)
+
+        # Révéler la réponse
+        current_question = self.get_current_question()
+        if current_question:
+            await self.broadcast({
+                "type": "reveal_answer",
+                "answer": current_question["answer"]
+            })
+
+        # Attendre 3 secondes avant la question suivante
+        await asyncio.sleep(3)
+
+        # Passer à la question suivante
+        await self.next_question()
+
+    async def next_question(self):
+        """Passe à la question suivante"""
+        self.game_state["current_question_index"] += 1
+        self.game_state["answered_players"].clear()
+
+        current_question = self.get_current_question()
+
+        if current_question:
+            # Envoyer la nouvelle question
+            await self.broadcast({
+                "type": "question",
+                "data": current_question
+            })
+
+            # Démarrer le timer
+            asyncio.create_task(self.start_question_timer())
+        else:
+            # Fin du jeu
+            await self.broadcast({
+                "type": "game_over",
+                "message": "Fin du jeu ! 🎉"
+            })
+
+    async def check_answer(self, player_id: str, answer: str):
+        # Vérifier si le joueur a déjà répondu
+        if player_id in self.game_state["answered_players"]:
+            return {"correct": False, "message": "Tu as déjà répondu !"}
+
+        current_question = self.get_current_question()
+        if not current_question:
+            return {"correct": False, "message": "Pas de question en cours"}
+
+        # Marquer le joueur comme ayant répondu
+        self.game_state["answered_players"].add(player_id)
+
+        # Vérifier la réponse
+        if answer.lower().strip() == current_question["answer"].lower().strip():
+            self.game_state["players"][player_id]["score"] += current_question["points"]
             await self.broadcast_leaderboard()
-            return True
-        return False
+            return {"correct": True, "message": "Bonne réponse ! 🎉"}
+
+        return {"correct": False, "message": "Mauvaise réponse... ❌"}
 
 manager = ConnectionManager()
 
@@ -74,23 +135,54 @@ QUESTIONS = [
         "answer": "Bob l'éponge",
         "points": 10
     },
+    {
+        "id": 2,
+        "image": "tahiti-bob.jpg",  # Change par ta vraie image
+        "question": "Question 2 : Teste !",
+        "answer": "Test",
+        "points": 10
+    },
     # Ajoute tes questions ici
 ]
 
+# État du jeu
+game_state = {
+    "current_question_index": 0,
+    "question_start_time": None,
+    "timer_task": None,
+    "answered": False
+}
+
 @app.get("/")
 async def get():
-    with open("static/index.html", "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read())
+    try:
+        with open("static/index.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>Erreur: fichier index.html introuvable</h1>", status_code=404)
 
 @app.websocket("/ws/{player_id}")
 async def websocket_endpoint(websocket: WebSocket, player_id: str):
     await manager.connect(websocket, player_id)
 
-    # Envoyer la première question
-    await manager.send_personal_message(json.dumps({
-        "type": "question",
-        "data": QUESTIONS[0]
-    }), websocket)
+    # Si c'est le premier joueur, démarrer la première question
+    if len(manager.active_connections) == 1:
+        current_question = manager.get_current_question()
+        if current_question:
+            await manager.broadcast({
+                "type": "question",
+                "data": current_question
+            })
+            # Démarrer le timer
+            asyncio.create_task(manager.start_question_timer())
+    else:
+        # Envoyer la question en cours aux nouveaux joueurs
+        current_question = manager.get_current_question()
+        if current_question:
+            await manager.send_personal_message(json.dumps({
+                "type": "question",
+                "data": current_question
+            }), websocket)
 
     try:
         while True:
@@ -98,12 +190,19 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
             message = json.loads(data)
 
             if message["type"] == "answer":
-                is_correct = await manager.check_answer(player_id, message["answer"])
+                result = await manager.check_answer(player_id, message["answer"])
                 await manager.send_personal_message(json.dumps({
                     "type": "answer_result",
-                    "correct": is_correct,
-                    "message": "Bonne réponse !" if is_correct else "Mauvaise réponse..."
+                    "correct": result["correct"],
+                    "message": result["message"]
                 }), websocket)
+
+            elif message["type"] == "set_name":
+                # Mettre à jour le nom du joueur
+                if player_id in manager.game_state["players"]:
+                    manager.game_state["players"][player_id]["name"] = message["name"]
+                    # Envoyer le leaderboard mis à jour à tous
+                    await manager.broadcast_leaderboard()
 
     except WebSocketDisconnect:
         manager.disconnect(player_id)
