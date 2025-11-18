@@ -10,6 +10,29 @@ let canAnswer = true;
 let isReady = false;
 let gameStarted = false;
 let playerName = null;
+let isAdmin = false;
+
+// Fonction pour vérifier si l'utilisateur est admin
+function checkAdminStatus() {
+    const adminCode = localStorage.getItem('adminCode');
+    return adminCode === 'kiki';
+}
+
+// Fonction pour sauvegarder le statut admin
+function setAdminStatus(code) {
+    if (code === 'kiki') {
+        localStorage.setItem('adminCode', code);
+        isAdmin = true;
+        return true;
+    }
+    return false;
+}
+
+// Fonction pour révoquer le statut admin
+function revokeAdminStatus() {
+    localStorage.removeItem('adminCode');
+    isAdmin = false;
+}
 
 // Fonction pour sauvegarder le nom dans localStorage
 function savePlayerName(name) {
@@ -448,6 +471,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Le serveur se reset automatiquement à la reconnexion
     }
 
+    // Vérifier le statut admin au chargement
+    isAdmin = checkAdminStatus();
+    updateAdminButtonState();
+
     // Connexion au serveur
     connect();
 
@@ -478,6 +505,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('form-question-answer').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') addQuestion();
     });
+
+    // Bouton "Afficher questions (Admin)"
+    const adminToggleBtn = document.getElementById('admin-toggle-btn');
+    adminToggleBtn.addEventListener('click', toggleAdminMode);
 
     // Bouton "Prêt"
     const readyBtn = document.getElementById('ready-btn');
@@ -578,21 +609,33 @@ async function loadQuestions() {
         const questionsItems = document.getElementById('questions-items');
 
         questionsCount.textContent = questions.length;
-        questionsItems.innerHTML = '';
 
-        questions.forEach(question => {
-            const questionItem = document.createElement('div');
-            questionItem.className = 'question-item';
-            questionItem.innerHTML = `
-                <div class="question-content">
-                    <span class="question-number">#${question.id}</span>
-                    <span>${question.question}</span>
-                    <span class="question-answer">🔒 Réponse cachée</span>
+        // Vérifier si l'utilisateur est admin
+        if (isAdmin) {
+            // Admin : afficher la liste complète avec réponses cachées
+            questionsItems.innerHTML = '';
+            questions.forEach(question => {
+                const questionItem = document.createElement('div');
+                questionItem.className = 'question-item';
+                questionItem.innerHTML = `
+                    <div class="question-content">
+                        <span class="question-number">#${question.id}</span>
+                        <span>${question.question}</span>
+                        <span class="question-answer">🔒 Réponse cachée</span>
+                    </div>
+                    <button class="delete-question-btn" onclick="deleteQuestion(${question.id})">🗑️</button>
+                `;
+                questionsItems.appendChild(questionItem);
+            });
+        } else {
+            // Joueur normal : message indiquant qu'il faut être admin
+            questionsItems.innerHTML = `
+                <div class="admin-message">
+                    <p>🔒 Seul l'administrateur peut voir les questions</p>
+                    <p class="admin-hint">Nombre total : ${questions.length} question(s)</p>
                 </div>
-                <button class="delete-question-btn" onclick="deleteQuestion(${question.id})">🗑️</button>
             `;
-            questionsItems.appendChild(questionItem);
-        });
+        }
     } catch (error) {
         console.error('Erreur lors du chargement des questions:', error);
     }
@@ -683,6 +726,11 @@ async function addQuestion() {
 
 // Supprimer une question
 async function deleteQuestion(questionId) {
+    if (!isAdmin) {
+        alert('Seul l\'administrateur peut supprimer des questions !');
+        return;
+    }
+
     if (!confirm('Voulez-vous vraiment supprimer cette question ?')) {
         return;
     }
@@ -704,3 +752,41 @@ async function deleteQuestion(questionId) {
         showFeedback(false, 'Erreur lors de la suppression ❌');
     }
 }
+
+// Basculer le mode admin
+function toggleAdminMode() {
+    if (isAdmin) {
+        // Déjà admin, demander si on veut se déconnecter
+        if (confirm('Voulez-vous quitter le mode administrateur ?')) {
+            revokeAdminStatus();
+            updateAdminButtonState();
+            loadQuestions();
+            showFeedback(true, 'Mode administrateur désactivé');
+        }
+    } else {
+        // Demander le code admin
+        const code = prompt('Entrez le code administrateur :');
+        if (code) {
+            if (setAdminStatus(code)) {
+                updateAdminButtonState();
+                loadQuestions();
+                showFeedback(true, 'Mode administrateur activé ! ✅');
+            } else {
+                showFeedback(false, 'Code incorrect ! ❌');
+            }
+        }
+    }
+}
+
+// Mettre à jour l'état du bouton admin
+function updateAdminButtonState() {
+    const adminBtn = document.getElementById('admin-toggle-btn');
+    if (isAdmin) {
+        adminBtn.textContent = '✓ Mode Admin actif';
+        adminBtn.classList.add('admin-active');
+    } else {
+        adminBtn.textContent = '🔐 Afficher questions (Admin)';
+        adminBtn.classList.remove('admin-active');
+    }
+}
+
