@@ -336,18 +336,28 @@ document.addEventListener('DOMContentLoaded', () => {
     // Charger les questions existantes
     loadQuestions();
 
+    // Afficher le nom du fichier sélectionné
+    const fileInput = document.getElementById('form-question-image');
+    const fileNameDisplay = document.getElementById('file-name');
+
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            fileNameDisplay.textContent = file.name;
+        } else {
+            fileNameDisplay.textContent = 'Aucun fichier sélectionné';
+        }
+    });
+
     // Bouton "Ajouter question"
     const addQuestionBtn = document.getElementById('add-question-btn');
     addQuestionBtn.addEventListener('click', addQuestion);
 
-    // Permettre d'ajouter avec Enter sur les champs
-    document.getElementById('question-image').addEventListener('keypress', (e) => {
+    // Permettre d'ajouter avec Enter sur les champs texte uniquement
+    document.getElementById('form-question-text').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') addQuestion();
     });
-    document.getElementById('question-text').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') addQuestion();
-    });
-    document.getElementById('question-answer').addEventListener('keypress', (e) => {
+    document.getElementById('form-question-answer').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') addQuestion();
     });
 
@@ -402,3 +412,140 @@ window.addEventListener('load', () => {
         }
     }, 500); // Attendre un peu que la connexion soit établie
 });
+
+// Charger les questions existantes depuis le serveur
+async function loadQuestions() {
+    try {
+        const response = await fetch('/api/questions');
+        const questions = await response.json();
+
+        const questionsCount = document.getElementById('questions-count');
+        const questionsItems = document.getElementById('questions-items');
+
+        questionsCount.textContent = questions.length;
+        questionsItems.innerHTML = '';
+
+        questions.forEach(question => {
+            const questionItem = document.createElement('div');
+            questionItem.className = 'question-item';
+            questionItem.innerHTML = `
+                <div class="question-content">
+                    <span class="question-number">#${question.id}</span>
+                    <span>${question.question}</span>
+                    <span class="question-answer">(Réponse: ${question.answer})</span>
+                </div>
+                <button class="delete-question-btn" onclick="deleteQuestion(${question.id})">🗑️</button>
+            `;
+            questionsItems.appendChild(questionItem);
+        });
+    } catch (error) {
+        console.error('Erreur lors du chargement des questions:', error);
+    }
+}
+
+// Ajouter une question
+async function addQuestion() {
+    const imageInput = document.getElementById('form-question-image');
+    const textInput = document.getElementById('form-question-text');
+    const answerInput = document.getElementById('form-question-answer');
+
+    const file = imageInput.files[0];
+    const question = textInput.value.trim();
+    const answer = answerInput.value.trim();
+
+    if (!file || !question || !answer) {
+        alert('Veuillez remplir tous les champs et sélectionner une image !');
+        return;
+    }
+
+    // Vérifier le type de fichier
+    if (!file.type.match('image/(png|jpeg|jpg)')) {
+        alert('Veuillez sélectionner une image PNG ou JPG !');
+        return;
+    }
+
+    try {
+        // Désactiver le bouton pendant l'upload
+        const addBtn = document.getElementById('add-question-btn');
+        addBtn.disabled = true;
+        addBtn.textContent = '⏳ Upload en cours...';
+
+        // Étape 1: Upload de l'image
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const uploadResponse = await fetch('/api/upload-image', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!uploadResponse.ok) {
+            throw new Error('Erreur lors de l\'upload de l\'image');
+        }
+
+        const uploadResult = await uploadResponse.json();
+        const imageName = uploadResult.filename;
+
+        // Étape 2: Créer la question avec le nom de l'image
+        const questionResponse = await fetch('/api/questions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                image: imageName,
+                question: question,
+                answer: answer,
+                points: 10
+            })
+        });
+
+        if (questionResponse.ok) {
+            // Vider les champs
+            imageInput.value = '';
+            textInput.value = '';
+            answerInput.value = '';
+            document.getElementById('file-name').textContent = 'Aucun fichier sélectionné';
+
+            // Recharger la liste des questions
+            await loadQuestions();
+
+            // Afficher un message de succès
+            showFeedback(true, 'Question ajoutée avec succès ! ✅');
+        } else {
+            throw new Error('Erreur lors de l\'ajout de la question');
+        }
+    } catch (error) {
+        console.error('Erreur lors de l\'ajout de la question:', error);
+        showFeedback(false, 'Erreur lors de l\'ajout de la question ❌');
+    } finally {
+        // Réactiver le bouton
+        const addBtn = document.getElementById('add-question-btn');
+        addBtn.disabled = false;
+        addBtn.textContent = '➕ Ajouter la question';
+    }
+}
+
+// Supprimer une question
+async function deleteQuestion(questionId) {
+    if (!confirm('Voulez-vous vraiment supprimer cette question ?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/questions/${questionId}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            // Recharger la liste des questions
+            await loadQuestions();
+            showFeedback(true, 'Question supprimée ! 🗑️');
+        } else {
+            throw new Error('Erreur lors de la suppression');
+        }
+    } catch (error) {
+        console.error('Erreur lors de la suppression de la question:', error);
+        showFeedback(false, 'Erreur lors de la suppression ❌');
+    }
+}

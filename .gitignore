@@ -44,3 +44,6 @@ wheels/
 # Questions (optionnel - décommenter si vous voulez git ignore)
 # questions.json
 
+# Images uploadées (mais garder les images par défaut)
+static/assets/question_*
+

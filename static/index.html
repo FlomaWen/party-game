@@ -27,9 +27,15 @@
         <div id="add-question-container" class="add-question-container">
             <h2>📝 Ajouter des questions</h2>
             <div class="question-form">
-                <input type="text" id="question-image" placeholder="Nom du fichier image (ex: image.jpg)" required>
-                <input type="text" id="question-text" placeholder="Votre question" required>
-                <input type="text" id="question-answer" placeholder="La réponse" required>
+                <div class="file-input-wrapper">
+                    <label for="form-question-image" class="file-label">
+                        📁 Choisir une image (PNG/JPG)
+                    </label>
+                    <input type="file" id="form-question-image" accept="image/png,image/jpeg,image/jpg" required>
+                    <span id="file-name" class="file-name">Aucun fichier sélectionné</span>
+                </div>
+                <input type="text" id="form-question-text" placeholder="Votre question" required>
+                <input type="text" id="form-question-answer" placeholder="La réponse" required>
                 <button id="add-question-btn" class="add-question-btn">➕ Ajouter la question</button>
             </div>
             <div id="questions-list" class="questions-list">

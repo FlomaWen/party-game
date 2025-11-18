@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, File, UploadFile
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from typing import Dict
@@ -6,6 +6,8 @@ from pydantic import BaseModel
 import json
 import asyncio
 import os
+import shutil
+from pathlib import Path
 
 app = FastAPI()
 
@@ -254,6 +256,37 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+# Créer le dossier assets s'il n'existe pas
+ASSETS_DIR = Path("static/assets")
+ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+
+# API pour uploader une image
+@app.post("/api/upload-image")
+async def upload_image(file: UploadFile = File(...)):
+    try:
+        # Vérifier le type de fichier
+        if not file.content_type in ["image/png", "image/jpeg", "image/jpg"]:
+            raise HTTPException(status_code=400, detail="Seuls les fichiers PNG et JPG sont acceptés")
+
+        # Générer un nom de fichier unique basé sur le timestamp
+        import time
+        file_extension = file.filename.split('.')[-1]
+        unique_filename = f"question_{int(time.time())}_{os.urandom(4).hex()}.{file_extension}"
+
+        # Chemin complet du fichier
+        file_path = ASSETS_DIR / unique_filename
+
+        # Sauvegarder le fichier
+        with file_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        return JSONResponse(content={
+            "message": "Image uploadée avec succès",
+            "filename": unique_filename
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lors de l'upload: {str(e)}")
+
 # API pour ajouter une question
 @app.post("/api/questions")
 async def add_question(question: Question):
@@ -366,5 +399,5 @@ if __name__ == "__main__":
     import uvicorn
     # Utilise la variable PORT fournie par Render (ou 8000 en local)
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
 
