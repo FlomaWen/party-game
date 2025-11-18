@@ -7,7 +7,21 @@ __pycache__/
 env/
 venv/
 ENV/
-.venv
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
 # IDE
 .vscode/
@@ -15,18 +29,18 @@ ENV/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
-Thumbs.db
 
 # Logs
 *.log
 
-# Test
-.pytest_cache/
-.coverage
-
-# Environment variables
+# Local environment
 .env
 .env.local
+
+# Render
+.render/
+
+# Questions (optionnel - décommenter si vous voulez git ignore)
+# questions.json
+
