@@ -8,8 +8,24 @@ import asyncio
 import os
 import shutil
 from pathlib import Path
+import logging
 
-app = FastAPI()
+# Configuration des logs
+# Désactiver les logs détaillés en production (sur Render)
+IS_PRODUCTION = os.getenv("RENDER") is not None or os.getenv("PORT") is not None
+if IS_PRODUCTION:
+    # En production : logs minimaux
+    logging.basicConfig(level=logging.WARNING)
+else:
+    # En local : logs complets
+    logging.basicConfig(level=logging.INFO)
+
+app = FastAPI(
+    title="Party Game",
+    # Désactiver la documentation en production pour plus de sécurité
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc"
+)
 
 # Modèle pour les questions
 class Question(BaseModel):
@@ -31,8 +47,20 @@ def load_questions():
                 for idx, q in enumerate(questions):
                     if "id" not in q:
                         q["id"] = idx + 1
+
+                # Log sécurisé (masquer les réponses en production)
+                if not IS_PRODUCTION:
+                    print(f"✅ {len(questions)} questions chargées")
+                else:
+                    # En production : ne pas afficher le contenu
+                    logging.info(f"Questions loaded: {len(questions)}")
+
                 return questions
-        except:
+        except Exception as e:
+            if not IS_PRODUCTION:
+                print(f"❌ Erreur de chargement: {e}")
+            else:
+                logging.error("Failed to load questions")
             return []
     return []
 
@@ -40,6 +68,12 @@ def load_questions():
 def save_questions(questions):
     with open(QUESTIONS_FILE, "w", encoding="utf-8") as f:
         json.dump(questions, f, ensure_ascii=False, indent=2)
+
+    # Log sécurisé
+    if not IS_PRODUCTION:
+        print(f"💾 {len(questions)} questions sauvegardées")
+    else:
+        logging.info(f"Questions saved: {len(questions)}")
 
 # Questions du jeu (chargées depuis le fichier)
 QUESTIONS = load_questions()
@@ -87,7 +121,10 @@ class ConnectionManager:
 
         # Si tous les joueurs se déconnectent, reset le jeu
         if len(self.active_connections) == 0:
-            print("Tous les joueurs déconnectés - Reset du jeu")
+            if not IS_PRODUCTION:
+                print("🔄 Tous les joueurs déconnectés - Reset du jeu")
+            else:
+                logging.info("All players disconnected - Game reset")
             self.reset_game()
 
     async def send_personal_message(self, message: str, websocket: WebSocket):
@@ -273,19 +310,19 @@ class ConnectionManager:
         self.game_state["total_questions"] = len(QUESTIONS)
 
     async def check_answer(self, player_id: str, answer: str, time_left: int):
-        # Vérifier si le joueur a déjà répondu
+        # Vérifier si le joueur a déjà trouvé la bonne réponse
         if player_id in self.game_state["answered_players"]:
-            return {"correct": False, "message": "Tu as déjà répondu !"}
+            return {"correct": False, "message": "Tu as déjà répondu correctement ! ✓"}
 
         current_question = self.get_current_question()
         if not current_question:
             return {"correct": False, "message": "Pas de question en cours"}
 
-        # Marquer le joueur comme ayant répondu
-        self.game_state["answered_players"].add(player_id)
-
         # Vérifier la réponse
         if answer.lower().strip() == current_question["answer"].lower().strip():
+            # Marquer le joueur comme ayant trouvé la bonne réponse
+            self.game_state["answered_players"].add(player_id)
+
             # Calculer les points selon le temps restant
             if time_left >= 7:  # 10, 9, 8, 7 secondes (3 premières secondes)
                 points = 10
@@ -309,7 +346,8 @@ class ConnectionManager:
 
             return {"correct": True, "message": f"Bonne réponse ! +{points} pts 🎉", "points": points}
 
-        return {"correct": False, "message": "Mauvaise réponse... ❌"}
+        # Mauvaise réponse - le joueur peut réessayer
+        return {"correct": False, "message": "Mauvaise réponse... Réessaie ! ❌", "can_retry": True}
 
 manager = ConnectionManager()
 

@@ -110,6 +110,10 @@ function handleMessage(message) {
             displayQuestion(message.data, message.question_number, message.total_questions);
             startTimer(10);
             canAnswer = true;
+            // Réactiver l'input pour la nouvelle question
+            document.getElementById('answer-input').disabled = false;
+            document.getElementById('submit-btn').disabled = false;
+            document.getElementById('answer-input').focus();
             // Cacher le bouton prêt et la liste des joueurs pendant la question
             document.getElementById('ready-container').classList.add('hidden');
             document.getElementById('players-status-container').classList.add('hidden');
@@ -120,8 +124,18 @@ function handleMessage(message) {
             break;
 
         case 'answer_result':
-            showFeedback(message.correct, message.message);
-            canAnswer = false;
+            if (message.correct) {
+                // Bonne réponse - bloquer les nouvelles tentatives
+                showFeedback(true, message.message);
+                canAnswer = false;
+                // Désactiver temporairement l'input
+                document.getElementById('answer-input').disabled = true;
+                document.getElementById('submit-btn').disabled = true;
+            } else {
+                // Mauvaise réponse - permettre de réessayer
+                showFeedback(false, message.message);
+                // L'input reste actif pour réessayer
+            }
             break;
 
         case 'reveal_answer':
@@ -300,7 +314,12 @@ function displayQuestion(question, questionNumber, totalQuestions) {
     const currentQuestionSpan = document.getElementById('current-question');
 
     if (question.image) {
-        questionImage.src = `/static/assets/${question.image}`;
+        // Vérifier si c'est une URL complète (http:// ou https://) ou un fichier local
+        if (question.image.startsWith('http://') || question.image.startsWith('https://')) {
+            questionImage.src = question.image;
+        } else {
+            questionImage.src = `/static/assets/${question.image}`;
+        }
     }
 
     if (question.question) {
@@ -445,11 +464,6 @@ function submitAnswer() {
         return;
     }
 
-    if (!canAnswer) {
-        alert('Vous avez déjà répondu à cette question !');
-        return;
-    }
-
     // Envoyer la réponse au serveur avec le temps restant
     ws.send(JSON.stringify({
         type: 'answer',
@@ -457,7 +471,7 @@ function submitAnswer() {
         time_left: timeLeft
     }));
 
-    // Vider le champ
+    // Vider le champ pour permettre une nouvelle tentative
     input.value = '';
 }
 
