@@ -39,6 +39,207 @@ body {
     }
 }
 
+/* Info de la partie */
+.game-info {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 40px;
+    margin: 20px 0;
+    font-size: 1.3rem;
+}
+
+.ready-status {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 15px 30px;
+    border-radius: 10px;
+    font-weight: bold;
+}
+
+.question-counter {
+    background: rgba(138, 43, 226, 0.3);
+    padding: 15px 30px;
+    border-radius: 10px;
+    font-weight: bold;
+}
+
+/* Bouton Prêt */
+.ready-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 30px 0;
+    gap: 30px;
+}
+
+/* Formulaire d'ajout de questions */
+.add-question-container {
+    width: 100%;
+    max-width: 800px;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 30px;
+    border-radius: 15px;
+    backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.add-question-container h2 {
+    margin-bottom: 20px;
+    text-align: center;
+    font-size: 1.8rem;
+}
+
+.question-form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-bottom: 30px;
+}
+
+.question-form input {
+    padding: 15px;
+    font-size: 1.1rem;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    transition: all 0.3s;
+}
+
+.question-form input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.question-form input:focus {
+    outline: none;
+    border-color: #4caf50;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.add-question-btn {
+    padding: 15px 30px;
+    font-size: 1.3rem;
+    font-weight: bold;
+    background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s;
+    box-shadow: 0 5px 15px rgba(33, 150, 243, 0.4);
+}
+
+.add-question-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(33, 150, 243, 0.6);
+}
+
+.add-question-btn:active {
+    transform: translateY(0);
+}
+
+/* Liste des questions */
+.questions-list {
+    margin-top: 30px;
+}
+
+.questions-list h3 {
+    margin-bottom: 15px;
+    text-align: center;
+    font-size: 1.4rem;
+}
+
+.questions-items {
+    max-height: 300px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.question-item {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 15px;
+    border-radius: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.question-item-text {
+    flex: 1;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.delete-question-btn {
+    padding: 8px 15px;
+    background: rgba(244, 67, 54, 0.8);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.2rem;
+    transition: all 0.3s;
+}
+
+.delete-question-btn:hover {
+    background: rgba(244, 67, 54, 1);
+    transform: scale(1.1);
+}
+
+/* Scrollbar personnalisée */
+.questions-items::-webkit-scrollbar {
+    width: 8px;
+}
+
+.questions-items::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+}
+
+.questions-items::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 10px;
+}
+
+.questions-items::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
+}
+
+.ready-btn {
+    padding: 20px 60px;
+    font-size: 2rem;
+    font-weight: bold;
+    background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+    color: white;
+    border: 4px solid white;
+    border-radius: 15px;
+    cursor: pointer;
+    transition: all 0.3s;
+    box-shadow: 0 5px 20px rgba(76, 175, 80, 0.5);
+}
+
+.ready-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 8px 30px rgba(76, 175, 80, 0.7);
+}
+
+.ready-btn:active {
+    transform: scale(0.95);
+}
+
+.ready-btn.clicked {
+    background: linear-gradient(135deg, #9e9e9e 0%, #757575 100%);
+    cursor: not-allowed;
+}
+
+.ready-btn.clicked::after {
+    content: " ✓";
+}
+
 /* Zone principale */
 .game-area {
     display: flex;
@@ -82,6 +283,54 @@ body {
     font-size: 1.5rem;
     text-align: center;
     font-weight: bold;
+}
+
+/* Timer */
+.timer {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 80px;
+    height: 80px;
+    background: #4caf50;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
+    font-weight: bold;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    z-index: 10;
+    transition: all 0.3s;
+}
+
+.timer.warning {
+    background: #ff9800;
+    animation: pulse-warning 0.5s infinite;
+}
+
+.timer.danger {
+    background: #f44336;
+    animation: pulse-danger 0.3s infinite;
+}
+
+@keyframes pulse-warning {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.1);
+    }
+}
+
+@keyframes pulse-danger {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.15);
+    }
 }
 
 /* Leaderboard */
@@ -278,6 +527,29 @@ body {
     }
     50% {
         opacity: 0.5;
+    }
+}
+
+/* Animations pour les messages temporaires */
+@keyframes slideIn {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(400px);
+        opacity: 0;
     }
 }
 

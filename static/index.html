@@ -11,10 +11,41 @@
     <!-- Titre -->
     <h1 class="title">PARTY GAME by flo</h1>
 
+    <!-- Info de la partie -->
+    <div id="game-info" class="game-info">
+        <div id="ready-status" class="ready-status">
+            En attente des joueurs... <span id="ready-count">0/0</span> prêts
+        </div>
+        <div id="question-counter" class="question-counter hidden">
+            Question <span id="current-question">1</span> / <span id="total-questions">10</span>
+        </div>
+    </div>
+
+    <!-- Bouton Prêt -->
+    <div id="ready-container" class="ready-container">
+        <!-- Formulaire d'ajout de questions -->
+        <div id="add-question-container" class="add-question-container">
+            <h2>📝 Ajouter des questions</h2>
+            <div class="question-form">
+                <input type="text" id="question-image" placeholder="Nom du fichier image (ex: image.jpg)" required>
+                <input type="text" id="question-text" placeholder="Votre question" required>
+                <input type="text" id="question-answer" placeholder="La réponse" required>
+                <button id="add-question-btn" class="add-question-btn">➕ Ajouter la question</button>
+            </div>
+            <div id="questions-list" class="questions-list">
+                <h3>Questions ajoutées (<span id="questions-count">0</span>)</h3>
+                <div id="questions-items"></div>
+            </div>
+        </div>
+
+        <button id="ready-btn" class="ready-btn">Je suis prêt ! 🎮</button>
+    </div>
+
     <!-- Zone principale du jeu -->
-    <div class="game-area">
+    <div class="game-area hidden" id="game-area">
         <!-- Zone image centrale -->
         <div class="image-zone">
+            <div id="timer" class="timer">10</div>
             <img id="question-image" src="/static/assets/tahiti-bob.jpg" alt="Question image">
             <div id="question-text" class="question-text"></div>
         </div>

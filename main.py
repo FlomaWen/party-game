@@ -1,12 +1,46 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
-from typing import Dict, List
+from fastapi.responses import HTMLResponse, JSONResponse
+from typing import Dict
+from pydantic import BaseModel
 import json
 import asyncio
-from datetime import datetime
+import os
 
 app = FastAPI()
+
+# Modèle pour les questions
+class Question(BaseModel):
+    image: str
+    question: str
+    answer: str
+    points: int = 10
+
+# Chemin vers le fichier JSON
+QUESTIONS_FILE = "questions.json"
+
+# Charger les questions depuis le fichier JSON
+def load_questions():
+    if os.path.exists(QUESTIONS_FILE):
+        try:
+            with open(QUESTIONS_FILE, "r", encoding="utf-8") as f:
+                questions = json.load(f)
+                # Ajouter les IDs si manquants
+                for idx, q in enumerate(questions):
+                    if "id" not in q:
+                        q["id"] = idx + 1
+                return questions
+        except:
+            return []
+    return []
+
+# Sauvegarder les questions dans le fichier JSON
+def save_questions(questions):
+    with open(QUESTIONS_FILE, "w", encoding="utf-8") as f:
+        json.dump(questions, f, ensure_ascii=False, indent=2)
+
+# Questions du jeu (chargées depuis le fichier)
+QUESTIONS = load_questions()
 
 # Gestionnaire de connexions
 class ConnectionManager:
@@ -19,7 +53,10 @@ class ConnectionManager:
             "current_question_index": 0,
             "question_start_time": None,
             "timer_task": None,
-            "answered_players": set()
+            "answered_players": set(),
+            "ready_players": set(),
+            "game_started": False,
+            "total_questions": len(QUESTIONS)
         }
 
     async def connect(self, websocket: WebSocket, player_id: str):
@@ -57,6 +94,67 @@ class ConnectionManager:
             "leaderboard": leaderboard
         })
 
+    async def player_ready(self, player_id: str):
+        """Marquer un joueur comme prêt"""
+        self.game_state["ready_players"].add(player_id)
+
+        # Envoyer le statut "prêt" à tous
+        await self.broadcast({
+            "type": "ready_status",
+            "ready_count": len(self.game_state["ready_players"]),
+            "total_count": len(self.active_connections)
+        })
+
+        # Si tous les joueurs sont prêts, démarrer le jeu
+        if len(self.game_state["ready_players"]) == len(self.active_connections) and len(self.active_connections) > 0:
+            await self.start_game()
+
+    async def start_game(self):
+        """Démarrer le jeu"""
+        if self.game_state["game_started"]:
+            return
+
+        # Recharger les questions depuis le fichier
+        global QUESTIONS
+        QUESTIONS = load_questions()
+        self.game_state["total_questions"] = len(QUESTIONS)
+        self.game_state["current_question_index"] = 0
+
+        if len(QUESTIONS) == 0:
+            await self.broadcast({
+                "type": "error",
+                "message": "Aucune question n'a été ajoutée ! Ajoutez des questions avant de commencer."
+            })
+            # Réinitialiser les joueurs prêts
+            self.game_state["ready_players"].clear()
+            await self.broadcast({
+                "type": "ready_status",
+                "ready_count": 0,
+                "total_count": len(self.active_connections)
+            })
+            return
+
+        self.game_state["game_started"] = True
+
+        # Envoyer le signal de démarrage
+        await self.broadcast({
+            "type": "game_start",
+            "total_questions": self.game_state["total_questions"]
+        })
+
+        # Attendre 2 secondes puis démarrer la première question
+        await asyncio.sleep(2)
+
+        current_question = self.get_current_question()
+        if current_question:
+            await self.broadcast({
+                "type": "question",
+                "data": current_question,
+                "question_number": self.game_state["current_question_index"] + 1,
+                "total_questions": self.game_state["total_questions"]
+            })
+            asyncio.create_task(self.start_question_timer())
+
     def get_current_question(self):
         idx = self.game_state["current_question_index"]
         if idx < len(QUESTIONS):
@@ -75,8 +173,8 @@ class ConnectionManager:
                 "answer": current_question["answer"]
             })
 
-        # Attendre 3 secondes avant la question suivante
-        await asyncio.sleep(3)
+        # Attendre 2 secondes avant la question suivante
+        await asyncio.sleep(2)
 
         # Passer à la question suivante
         await self.next_question()
@@ -92,19 +190,30 @@ class ConnectionManager:
             # Envoyer la nouvelle question
             await self.broadcast({
                 "type": "question",
-                "data": current_question
+                "data": current_question,
+                "question_number": self.game_state["current_question_index"] + 1,
+                "total_questions": self.game_state["total_questions"]
             })
 
             # Démarrer le timer
             asyncio.create_task(self.start_question_timer())
         else:
-            # Fin du jeu
+            # Fin du jeu - trouver le gagnant
+            leaderboard = [
+                {"name": player["name"], "score": player["score"]}
+                for player in self.game_state["players"].values()
+            ]
+            leaderboard.sort(key=lambda x: x["score"], reverse=True)
+
+            winner = leaderboard[0] if leaderboard else None
+
             await self.broadcast({
                 "type": "game_over",
-                "message": "Fin du jeu ! 🎉"
+                "message": "Fin du jeu ! 🎉",
+                "winner": winner
             })
 
-    async def check_answer(self, player_id: str, answer: str):
+    async def check_answer(self, player_id: str, answer: str, time_left: int):
         # Vérifier si le joueur a déjà répondu
         if player_id in self.game_state["answered_players"]:
             return {"correct": False, "message": "Tu as déjà répondu !"}
@@ -118,40 +227,79 @@ class ConnectionManager:
 
         # Vérifier la réponse
         if answer.lower().strip() == current_question["answer"].lower().strip():
-            self.game_state["players"][player_id]["score"] += current_question["points"]
+            # Calculer les points selon le temps restant
+            if time_left >= 7:  # 10, 9, 8, 7 secondes (3 premières secondes)
+                points = 10
+            elif time_left >= 4:  # 6, 5, 4 secondes (6 premières secondes)
+                points = 7
+            elif time_left >= 1:  # 3, 2, 1 secondes (9 premières secondes)
+                points = 4
+            else:  # 0 seconde
+                points = 2
+
+            self.game_state["players"][player_id]["score"] += points
             await self.broadcast_leaderboard()
-            return {"correct": True, "message": "Bonne réponse ! 🎉"}
+
+            # Vérifier si le joueur a gagné (100 points)
+            if self.game_state["players"][player_id]["score"] >= 100:
+                await self.broadcast({
+                    "type": "winner",
+                    "player_name": self.game_state["players"][player_id]["name"],
+                    "score": self.game_state["players"][player_id]["score"]
+                })
+
+            return {"correct": True, "message": f"Bonne réponse ! +{points} pts 🎉", "points": points}
 
         return {"correct": False, "message": "Mauvaise réponse... ❌"}
 
 manager = ConnectionManager()
 
-# Questions du jeu (à adapter selon tes besoins)
-QUESTIONS = [
-    {
-        "id": 1,
-        "image": "tahiti-bob.jpg",
-        "question": "De quel dessin animé provient cette image ?",
-        "answer": "Bob l'éponge",
-        "points": 10
-    },
-    {
-        "id": 2,
-        "image": "tahiti-bob.jpg",  # Change par ta vraie image
-        "question": "Question 2 : Teste !",
-        "answer": "Test",
-        "points": 10
-    },
-    # Ajoute tes questions ici
-]
+# API pour ajouter une question
+@app.post("/api/questions")
+async def add_question(question: Question):
+    questions = load_questions()
+    new_question = {
+        "id": len(questions) + 1,
+        "image": question.image,
+        "question": question.question,
+        "answer": question.answer,
+        "points": question.points
+    }
+    questions.append(new_question)
+    save_questions(questions)
 
-# État du jeu
-game_state = {
-    "current_question_index": 0,
-    "question_start_time": None,
-    "timer_task": None,
-    "answered": False
-}
+    # Mettre à jour le compteur global
+    global QUESTIONS
+    QUESTIONS = questions
+
+    return JSONResponse(content={"message": "Question ajoutée avec succès", "question": new_question})
+
+# API pour obtenir toutes les questions
+@app.get("/api/questions")
+async def get_questions():
+    questions = load_questions()
+    return JSONResponse(content=questions)
+
+# API pour supprimer toutes les questions (reset)
+@app.delete("/api/questions")
+async def delete_all_questions():
+    save_questions([])
+    global QUESTIONS
+    QUESTIONS = []
+    return JSONResponse(content={"message": "Toutes les questions ont été supprimées"})
+
+# API pour supprimer une question spécifique
+@app.delete("/api/questions/{question_id}")
+async def delete_question(question_id: int):
+    questions = load_questions()
+    questions = [q for q in questions if q.get("id") != question_id]
+    # Réassigner les IDs
+    for idx, q in enumerate(questions):
+        q["id"] = idx + 1
+    save_questions(questions)
+    global QUESTIONS
+    QUESTIONS = questions
+    return JSONResponse(content={"message": "Question supprimée"})
 
 @app.get("/")
 async def get():
@@ -165,23 +313,23 @@ async def get():
 async def websocket_endpoint(websocket: WebSocket, player_id: str):
     await manager.connect(websocket, player_id)
 
-    # Si c'est le premier joueur, démarrer la première question
-    if len(manager.active_connections) == 1:
-        current_question = manager.get_current_question()
-        if current_question:
-            await manager.broadcast({
-                "type": "question",
-                "data": current_question
-            })
-            # Démarrer le timer
-            asyncio.create_task(manager.start_question_timer())
-    else:
-        # Envoyer la question en cours aux nouveaux joueurs
+    # Envoyer le statut initial du jeu
+    await manager.send_personal_message(json.dumps({
+        "type": "ready_status",
+        "ready_count": len(manager.game_state["ready_players"]),
+        "total_count": len(manager.active_connections),
+        "total_questions": manager.game_state["total_questions"]
+    }), websocket)
+
+    # Si le jeu a déjà commencé, envoyer la question en cours
+    if manager.game_state["game_started"]:
         current_question = manager.get_current_question()
         if current_question:
             await manager.send_personal_message(json.dumps({
                 "type": "question",
-                "data": current_question
+                "data": current_question,
+                "question_number": manager.game_state["current_question_index"] + 1,
+                "total_questions": manager.game_state["total_questions"]
             }), websocket)
 
     try:
@@ -190,7 +338,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
             message = json.loads(data)
 
             if message["type"] == "answer":
-                result = await manager.check_answer(player_id, message["answer"])
+                result = await manager.check_answer(player_id, message["answer"], message.get("time_left", 0))
                 await manager.send_personal_message(json.dumps({
                     "type": "answer_result",
                     "correct": result["correct"],
@@ -204,6 +352,9 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                     # Envoyer le leaderboard mis à jour à tous
                     await manager.broadcast_leaderboard()
 
+            elif message["type"] == "ready":
+                await manager.player_ready(player_id)
+
     except WebSocketDisconnect:
         manager.disconnect(player_id)
         await manager.broadcast_leaderboard()
@@ -213,7 +364,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    import os
     # Utilise la variable PORT fournie par Render (ou 8000 en local)
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
