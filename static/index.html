@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Party Game by Flo</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="container">
+    <!-- Titre -->
+    <h1 class="title">PARTY GAME by flo</h1>
+
+    <!-- Zone principale du jeu -->
+    <div class="game-area">
+        <!-- Zone image centrale -->
+        <div class="image-zone">
+            <img id="question-image" src="/static/assets/tahiti-bob.jpg" alt="Question image">
+            <div id="question-text" class="question-text"></div>
+        </div>
+
+        <!-- Leaderboard -->
+        <div class="leaderboard">
+            <h2>LEADERBOARD</h2>
+            <div id="leaderboard-list">
+                <!-- Les scores seront ajoutés dynamiquement -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Zone de saisie -->
+    <div class="input-zone">
+        <input
+                type="text"
+                id="answer-input"
+                placeholder="Entrez votre réponse ici..."
+                autocomplete="off"
+        >
+        <button id="submit-btn">Valider</button>
+    </div>
+
+    <!-- Zone de feedback -->
+    <div id="feedback" class="feedback hidden"></div>
+
+    <!-- Connexion status -->
+    <div id="connection-status" class="connection-status">
+        <span class="status-dot"></span>
+        <span id="status-text">Connexion...</span>
+    </div>
+</div>
+
+<script src="/static/script.js"></script>
+</body>
+</html>
