@@ -12,6 +12,69 @@ let gameStarted = false;
 let playerName = null;
 let isAdmin = false;
 
+// Système de détection d'inactivité
+let inactivityTimer = null;
+let lastActivityTime = Date.now();
+const INACTIVITY_TIMEOUT = 2 * 60 * 1000; // 2 minutes en millisecondes
+let isTabVisible = true;
+
+// Fonction pour détecter l'activité
+function resetInactivityTimer() {
+    lastActivityTime = Date.now();
+
+    // Annuler l'ancien timer
+    if (inactivityTimer) {
+        clearTimeout(inactivityTimer);
+    }
+
+    // Créer un nouveau timer
+    inactivityTimer = setTimeout(() => {
+        if (!isTabVisible) {
+            console.log('Inactivité détectée - Déconnexion...');
+            disconnectDueToInactivity();
+        }
+    }, INACTIVITY_TIMEOUT);
+}
+
+// Fonction pour gérer la déconnexion par inactivité
+function disconnectDueToInactivity() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        // Informer le serveur de la déconnexion
+        ws.send(JSON.stringify({
+            type: 'disconnect_inactive',
+            reason: 'Inactivité'
+        }));
+
+        // Fermer la connexion
+        ws.close();
+
+        // Afficher un message
+        alert('Vous avez été déconnecté pour inactivité. Rafraîchissez la page pour rejoindre.');
+    }
+}
+
+// Détection de la visibilité de l'onglet
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        // Onglet caché
+        isTabVisible = false;
+        console.log('Onglet inactif - Timer d\'inactivité activé');
+        resetInactivityTimer();
+    } else {
+        // Onglet visible
+        isTabVisible = true;
+        console.log('Onglet actif - Timer d\'inactivité réinitialisé');
+        resetInactivityTimer();
+    }
+});
+
+// Détecter l'activité de l'utilisateur (mouvements, clics, touches)
+document.addEventListener('mousemove', resetInactivityTimer);
+document.addEventListener('mousedown', resetInactivityTimer);
+document.addEventListener('keypress', resetInactivityTimer);
+document.addEventListener('touchstart', resetInactivityTimer);
+document.addEventListener('scroll', resetInactivityTimer);
+
 // Fonction pour vérifier si l'utilisateur est admin
 function checkAdminStatus() {
     const adminCode = localStorage.getItem('adminCode');
@@ -71,6 +134,9 @@ function connect() {
         console.log('Connecté au serveur');
         isConnected = true;
         updateConnectionStatus(true);
+
+        // Démarrer le timer d'inactivité
+        resetInactivityTimer();
     };
 
     ws.onmessage = (event) => {
@@ -82,6 +148,12 @@ function connect() {
         console.log('Déconnecté du serveur');
         isConnected = false;
         updateConnectionStatus(false);
+
+        // Arrêter le timer d'inactivité
+        if (inactivityTimer) {
+            clearTimeout(inactivityTimer);
+            inactivityTimer = null;
+        }
 
         // Reconnecter après 3 secondes
         setTimeout(connect, 3000);
