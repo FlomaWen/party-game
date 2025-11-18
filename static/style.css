@@ -67,6 +67,90 @@ body {
     font-weight: bold;
 }
 
+/* Liste des joueurs et leur statut */
+.players-status-container {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 20px;
+    border-radius: 15px;
+    backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    margin: 20px auto;
+    max-width: 600px;
+}
+
+.players-status-container h3 {
+    text-align: center;
+    margin-bottom: 15px;
+    font-size: 1.5rem;
+}
+
+.players-status-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.player-status-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 10px;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    transition: all 0.3s;
+}
+
+.player-status-item.ready {
+    border-color: rgba(76, 175, 80, 0.5);
+    background: rgba(76, 175, 80, 0.15);
+}
+
+.player-status-item.not-ready {
+    border-color: rgba(244, 67, 54, 0.5);
+    background: rgba(244, 67, 54, 0.15);
+}
+
+.player-status-name {
+    font-size: 1.1rem;
+    font-weight: bold;
+}
+
+.player-status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+}
+
+.status-dot-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    animation: pulse-status 2s infinite;
+}
+
+.status-dot-indicator.ready {
+    background: #4caf50;
+    box-shadow: 0 0 10px rgba(76, 175, 80, 0.6);
+}
+
+.status-dot-indicator.not-ready {
+    background: #f44336;
+    box-shadow: 0 0 10px rgba(244, 67, 54, 0.6);
+}
+
+@keyframes pulse-status {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.6;
+        transform: scale(1.2);
+    }
+}
+
 /* Bouton Prêt */
 .ready-container {
     display: flex;

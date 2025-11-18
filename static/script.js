@@ -73,7 +73,7 @@ function connect() {
 function handleMessage(message) {
     switch (message.type) {
         case 'ready_status':
-            updateReadyStatus(message.ready_count, message.total_count);
+            updateReadyStatus(message.ready_count, message.total_count, message.players);
             if (message.total_questions) {
                 document.getElementById('total-questions').textContent = message.total_questions;
             }
@@ -87,6 +87,9 @@ function handleMessage(message) {
             displayQuestion(message.data, message.question_number, message.total_questions);
             startTimer(10);
             canAnswer = true;
+            // Cacher le bouton prêt et la liste des joueurs pendant la question
+            document.getElementById('ready-container').classList.add('hidden');
+            document.getElementById('players-status-container').classList.add('hidden');
             break;
 
         case 'leaderboard_update':
@@ -100,6 +103,11 @@ function handleMessage(message) {
 
         case 'reveal_answer':
             revealAnswer(message.answer);
+            break;
+
+        case 'waiting_next_question':
+            // Phase d'attente entre les questions
+            showWaitingPhase(message.message);
             break;
 
         case 'winner':
@@ -175,8 +183,30 @@ function revealAnswer(answer) {
     canAnswer = false;
 }
 
+// Afficher la phase d'attente entre les questions
+function showWaitingPhase(message) {
+    // Réinitialiser l'état "prêt"
+    isReady = false;
+
+    // Afficher le conteneur avec le bouton prêt
+    const readyContainer = document.getElementById('ready-container');
+    readyContainer.classList.remove('hidden');
+
+    // Afficher la liste des joueurs
+    document.getElementById('players-status-container').classList.remove('hidden');
+
+    // Réinitialiser le bouton prêt
+    const readyBtn = document.getElementById('ready-btn');
+    readyBtn.classList.remove('clicked');
+    readyBtn.textContent = 'Prêt pour la suite ! 🎮';
+    readyBtn.disabled = false;
+
+    // Afficher un message
+    showFeedback(true, message);
+}
+
 // Mettre à jour le statut "Prêt"
-function updateReadyStatus(readyCount, totalCount) {
+function updateReadyStatus(readyCount, totalCount, players) {
     const readyStatus = document.getElementById('ready-status');
     const readyCountSpan = document.getElementById('ready-count');
 
@@ -190,14 +220,41 @@ function updateReadyStatus(readyCount, totalCount) {
         readyStatus.appendChild(readyCountSpan);
         readyStatus.innerHTML += ' prêts';
     }
+
+    // Mettre à jour la liste des joueurs si fournie
+    if (players) {
+        updatePlayersStatusList(players);
+    }
+}
+
+// Mettre à jour la liste des joueurs avec leur statut
+function updatePlayersStatusList(players) {
+    const playersList = document.getElementById('players-status-list');
+    playersList.innerHTML = '';
+
+    players.forEach(player => {
+        const playerItem = document.createElement('div');
+        playerItem.className = `player-status-item ${player.ready ? 'ready' : 'not-ready'}`;
+
+        playerItem.innerHTML = `
+            <span class="player-status-name">${player.name}</span>
+            <div class="player-status-indicator">
+                <span class="status-dot-indicator ${player.ready ? 'ready' : 'not-ready'}"></span>
+                <span>${player.ready ? '✓ Prêt' : '⏳ En attente'}</span>
+            </div>
+        `;
+
+        playersList.appendChild(playerItem);
+    });
 }
 
 // Démarrer le jeu
 function startGame(totalQuestions) {
     gameStarted = true;
 
-    // Cacher le bouton prêt
+    // Cacher le bouton prêt et le formulaire d'ajout de questions
     document.getElementById('ready-container').classList.add('hidden');
+    document.getElementById('add-question-container').classList.add('hidden');
 
     // Afficher la zone de jeu
     document.getElementById('game-area').classList.remove('hidden');
@@ -205,6 +262,9 @@ function startGame(totalQuestions) {
     // Afficher le compteur de questions
     document.getElementById('question-counter').classList.remove('hidden');
     document.getElementById('ready-status').classList.add('hidden');
+
+    // Cacher la liste des joueurs pendant le jeu
+    document.getElementById('players-status-container').classList.add('hidden');
 
     // Mettre à jour le nombre total de questions
     document.getElementById('total-questions').textContent = totalQuestions;

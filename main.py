@@ -70,11 +70,20 @@ class ConnectionManager:
         }
         await self.broadcast_leaderboard()
 
-    def disconnect(self, player_id: str):
+    async def disconnect(self, player_id: str):
         if player_id in self.active_connections:
             del self.active_connections[player_id]
         if player_id in self.game_state["players"]:
             del self.game_state["players"][player_id]
+
+        # Retirer le joueur de la liste des prêts
+        if player_id in self.game_state["ready_players"]:
+            self.game_state["ready_players"].discard(player_id)
+
+        # Broadcast le nouveau statut si des joueurs sont encore connectés
+        if len(self.active_connections) > 0:
+            await self.broadcast_ready_status()
+            await self.broadcast_leaderboard()
 
         # Si tous les joueurs se déconnectent, reset le jeu
         if len(self.active_connections) == 0:
@@ -101,20 +110,37 @@ class ConnectionManager:
             "leaderboard": leaderboard
         })
 
+    async def broadcast_ready_status(self):
+        """Envoyer le statut prêt avec la liste détaillée des joueurs"""
+        players_status = []
+        for player_id, player_data in self.game_state["players"].items():
+            players_status.append({
+                "id": player_id,
+                "name": player_data["name"],
+                "ready": player_id in self.game_state["ready_players"]
+            })
+
+        await self.broadcast({
+            "type": "ready_status",
+            "ready_count": len(self.game_state["ready_players"]),
+            "total_count": len(self.active_connections),
+            "players": players_status
+        })
+
     async def player_ready(self, player_id: str):
         """Marquer un joueur comme prêt"""
         self.game_state["ready_players"].add(player_id)
 
-        # Envoyer le statut "prêt" à tous
-        await self.broadcast({
-            "type": "ready_status",
-            "ready_count": len(self.game_state["ready_players"]),
-            "total_count": len(self.active_connections)
-        })
+        # Envoyer le statut "prêt" à tous avec la liste des joueurs
+        await self.broadcast_ready_status()
 
         # Si tous les joueurs sont prêts, démarrer le jeu
         if len(self.game_state["ready_players"]) == len(self.active_connections) and len(self.active_connections) > 0:
-            await self.start_game()
+            if not self.game_state["game_started"]:
+                await self.start_game()
+            else:
+                # Si le jeu a déjà commencé, passer à la question suivante
+                await self.next_question()
 
     async def start_game(self):
         """Démarrer le jeu"""
@@ -180,11 +206,20 @@ class ConnectionManager:
                 "answer": current_question["answer"]
             })
 
-        # Attendre 2 secondes avant la question suivante
-        await asyncio.sleep(2)
+        # Attendre 3 secondes pour voir la réponse
+        await asyncio.sleep(3)
 
-        # Passer à la question suivante
-        await self.next_question()
+        # Reset les joueurs prêts pour la synchronisation
+        self.game_state["ready_players"].clear()
+
+        # Demander aux joueurs de se préparer pour la question suivante
+        await self.broadcast({
+            "type": "waiting_next_question",
+            "message": "Préparez-vous pour la question suivante !"
+        })
+
+        # Envoyer le statut initial (personne n'est prêt)
+        await self.broadcast_ready_status()
 
     async def next_question(self):
         """Passe à la question suivante"""
@@ -421,7 +456,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                 await manager.player_ready(player_id)
 
     except WebSocketDisconnect:
-        manager.disconnect(player_id)
+        await manager.disconnect(player_id)
         await manager.broadcast_leaderboard()
 
 # Monter le dossier static pour servir les fichiers CSS, JS, images
