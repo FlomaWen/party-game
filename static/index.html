@@ -29,9 +29,9 @@
             <div class="question-form">
                 <div class="file-input-wrapper">
                     <label for="form-question-image" class="file-label">
-                        📁 Choisir une image (PNG/JPG)
+                        📁 Choisir une image (PNG/JPG/GIF)
                     </label>
-                    <input type="file" id="form-question-image" accept="image/png,image/jpeg,image/jpg" required>
+                    <input type="file" id="form-question-image" accept="image/png,image/jpeg,image/jpg,image/gif" required>
                     <span id="file-name" class="file-name">Aucun fichier sélectionné</span>
                 </div>
                 <input type="text" id="form-question-text" placeholder="Votre question" required>
@@ -83,6 +83,8 @@
     <div id="connection-status" class="connection-status">
         <span class="status-dot"></span>
         <span id="status-text">Connexion...</span>
+        <span id="player-name-display" class="player-name-display"></span>
+        <button id="change-name-btn" class="change-name-btn">✏️ Changer mon nom</button>
     </div>
 </div>
 

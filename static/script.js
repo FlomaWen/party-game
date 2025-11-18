@@ -9,6 +9,34 @@ let timeLeft = 10;
 let canAnswer = true;
 let isReady = false;
 let gameStarted = false;
+let playerName = null;
+
+// Fonction pour sauvegarder le nom dans localStorage
+function savePlayerName(name) {
+    localStorage.setItem('playerName', name);
+    playerName = name;
+    updatePlayerNameDisplay();
+}
+
+// Fonction pour récupérer le nom depuis localStorage
+function getPlayerName() {
+    return localStorage.getItem('playerName');
+}
+
+// Fonction pour effacer le nom du localStorage
+function clearPlayerName() {
+    localStorage.removeItem('playerName');
+    playerName = null;
+    updatePlayerNameDisplay();
+}
+
+// Fonction pour mettre à jour l'affichage du nom
+function updatePlayerNameDisplay() {
+    const display = document.getElementById('player-name-display');
+    if (display && playerName) {
+        display.textContent = `👤 ${playerName}`;
+    }
+}
 
 function connect() {
     // Auto-détecte si on est en local (ws://) ou en prod (wss://)
@@ -80,6 +108,12 @@ function handleMessage(message) {
 
         case 'game_over':
             showGameOver(message.message, message.winner);
+            break;
+
+        case 'game_reset':
+            // Le jeu a été reset - recharger la page
+            console.log('Jeu réinitialisé par le serveur');
+            location.reload();
             break;
 
         default:
@@ -215,6 +249,14 @@ function showWinner(playerName, score) {
     // Désactiver l'input
     document.getElementById('answer-input').disabled = true;
     document.getElementById('submit-btn').disabled = true;
+
+    // Ajouter un message pour refresh
+    setTimeout(() => {
+        feedback.innerHTML += '<br><small style="font-size: 1.2rem;">Rafraîchissez la page pour rejouer</small>';
+    }, 2000);
+
+    // Marquer que le jeu est terminé
+    localStorage.setItem('gameEnded', 'true');
 }
 
 // Afficher fin de jeu
@@ -242,6 +284,14 @@ function showGameOver(message, winner) {
     // Désactiver l'input
     document.getElementById('answer-input').disabled = true;
     document.getElementById('submit-btn').disabled = true;
+
+    // Ajouter un message pour refresh
+    setTimeout(() => {
+        feedback.innerHTML += '<br><small style="font-size: 1.2rem;">Rafraîchissez la page pour rejouer</small>';
+    }, 2000);
+
+    // Marquer que le jeu est terminé
+    localStorage.setItem('gameEnded', 'true');
 }
 
 // Mettre à jour le leaderboard
@@ -330,6 +380,14 @@ function submitAnswer() {
 
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
+    // Vérifier si le jeu était terminé avant le refresh
+    if (localStorage.getItem('gameEnded') === 'true') {
+        console.log('Jeu terminé détecté - Reset du jeu');
+        // Nettoyer le flag
+        localStorage.removeItem('gameEnded');
+        // Le serveur se reset automatiquement à la reconnexion
+    }
+
     // Connexion au serveur
     connect();
 
@@ -377,6 +435,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Bouton "Changer mon nom"
+    const changeNameBtn = document.getElementById('change-name-btn');
+    changeNameBtn.addEventListener('click', () => {
+        if (gameStarted) {
+            alert('Impossible de changer de nom pendant la partie !');
+            return;
+        }
+
+        const newName = prompt('Entrez votre nouveau nom:', playerName || '');
+        if (newName && newName.trim() && newName.trim() !== playerName) {
+            savePlayerName(newName.trim());
+
+            // Envoyer le nouveau nom au serveur
+            if (isConnected && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'set_name',
+                    name: playerName
+                }));
+                showFeedback(true, `Nom changé en "${playerName}" ✓`);
+            }
+        }
+    });
+
     // Bouton de soumission
     const submitBtn = document.getElementById('submit-btn');
     submitBtn.addEventListener('click', submitAnswer);
@@ -393,23 +474,37 @@ document.addEventListener('DOMContentLoaded', () => {
 // Demander le nom du joueur au chargement
 window.addEventListener('load', () => {
     setTimeout(() => {
-        const playerName = prompt('Entrez votre nom:', `Joueur ${Math.floor(Math.random() * 1000)}`);
-        if (playerName && playerName.trim()) {
-            // Attendre que la connexion soit établie
-            const sendName = () => {
-                if (isConnected && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({
-                        type: 'set_name',
-                        name: playerName.trim()
-                    }));
-                    console.log('Nom envoyé:', playerName.trim());
-                } else {
-                    // Réessayer après 500ms
-                    setTimeout(sendName, 500);
-                }
-            };
-            sendName();
+        // Vérifier si un nom existe déjà dans le localStorage
+        const savedName = getPlayerName();
+
+        if (savedName && savedName.trim()) {
+            // Utiliser le nom sauvegardé
+            playerName = savedName.trim();
+            console.log('Nom récupéré du localStorage:', playerName);
+            updatePlayerNameDisplay();
+        } else {
+            // Demander un nouveau nom
+            const newName = prompt('Entrez votre nom:', `Joueur ${Math.floor(Math.random() * 1000)}`);
+            if (newName && newName.trim()) {
+                savePlayerName(newName.trim());
+            }
         }
+
+        // Attendre que la connexion soit établie puis envoyer le nom
+        const sendName = () => {
+            if (isConnected && ws.readyState === WebSocket.OPEN && playerName) {
+                ws.send(JSON.stringify({
+                    type: 'set_name',
+                    name: playerName
+                }));
+                console.log('Nom envoyé:', playerName);
+                updatePlayerNameDisplay();
+            } else {
+                // Réessayer après 500ms
+                setTimeout(sendName, 500);
+            }
+        };
+        sendName();
     }, 500); // Attendre un peu que la connexion soit établie
 });
 
@@ -432,7 +527,7 @@ async function loadQuestions() {
                 <div class="question-content">
                     <span class="question-number">#${question.id}</span>
                     <span>${question.question}</span>
-                    <span class="question-answer">(Réponse: ${question.answer})</span>
+                    <span class="question-answer">🔒 Réponse cachée</span>
                 </div>
                 <button class="delete-question-btn" onclick="deleteQuestion(${question.id})">🗑️</button>
             `;
@@ -459,8 +554,8 @@ async function addQuestion() {
     }
 
     // Vérifier le type de fichier
-    if (!file.type.match('image/(png|jpeg|jpg)')) {
-        alert('Veuillez sélectionner une image PNG ou JPG !');
+    if (!file.type.match('image/(png|jpeg|jpg|gif)')) {
+        alert('Veuillez sélectionner une image PNG, JPG ou GIF !');
         return;
     }
 

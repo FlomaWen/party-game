@@ -76,6 +76,11 @@ class ConnectionManager:
         if player_id in self.game_state["players"]:
             del self.game_state["players"][player_id]
 
+        # Si tous les joueurs se déconnectent, reset le jeu
+        if len(self.active_connections) == 0:
+            print("Tous les joueurs déconnectés - Reset du jeu")
+            self.reset_game()
+
     async def send_personal_message(self, message: str, websocket: WebSocket):
         await websocket.send_text(message)
 
@@ -215,6 +220,23 @@ class ConnectionManager:
                 "winner": winner
             })
 
+    def reset_game(self):
+        """Reset complet du jeu"""
+        self.game_state["current_question_index"] = 0
+        self.game_state["question_start_time"] = None
+        self.game_state["answered_players"].clear()
+        self.game_state["ready_players"].clear()
+        self.game_state["game_started"] = False
+
+        # Reset les scores des joueurs
+        for player_id in self.game_state["players"]:
+            self.game_state["players"][player_id]["score"] = 0
+
+        # Recharger les questions
+        global QUESTIONS
+        QUESTIONS = load_questions()
+        self.game_state["total_questions"] = len(QUESTIONS)
+
     async def check_answer(self, player_id: str, answer: str, time_left: int):
         # Vérifier si le joueur a déjà répondu
         if player_id in self.game_state["answered_players"]:
@@ -265,8 +287,8 @@ ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 async def upload_image(file: UploadFile = File(...)):
     try:
         # Vérifier le type de fichier
-        if not file.content_type in ["image/png", "image/jpeg", "image/jpg"]:
-            raise HTTPException(status_code=400, detail="Seuls les fichiers PNG et JPG sont acceptés")
+        if not file.content_type in ["image/png", "image/jpeg", "image/jpg", "image/gif"]:
+            raise HTTPException(status_code=400, detail="Seuls les fichiers PNG, JPG et GIF sont acceptés")
 
         # Générer un nom de fichier unique basé sur le timestamp
         import time
@@ -333,6 +355,16 @@ async def delete_question(question_id: int):
     global QUESTIONS
     QUESTIONS = questions
     return JSONResponse(content={"message": "Question supprimée"})
+
+# API pour reset le jeu
+@app.post("/api/reset-game")
+async def reset_game():
+    manager.reset_game()
+    await manager.broadcast({
+        "type": "game_reset",
+        "message": "Le jeu a été réinitialisé"
+    })
+    return JSONResponse(content={"message": "Jeu réinitialisé"})
 
 @app.get("/")
 async def get():
