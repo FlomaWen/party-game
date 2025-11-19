@@ -70,7 +70,8 @@ class ConnectionManager:
             "answered_players": set(),
             "ready_players": set(),
             "game_started": False,
-            "total_questions": len(QUESTIONS)
+            "total_questions": len(QUESTIONS),
+            "used_question_ids": set()  # IDs des questions déjà posées
         }
 
     async def connect(self, websocket: WebSocket, player_id: str):
@@ -170,22 +171,19 @@ class ConnectionManager:
             return
 
         # Recharger les questions depuis la base de données
-        global QUESTIONS
-        QUESTIONS = db_load_questions()
+        all_questions = db_load_questions()
 
-        # Mélanger l'ordre des questions pour cette partie
-        try:
-            random.shuffle(QUESTIONS)
-        except Exception:
-            # si shuffle échoue, on laisse l'ordre tel quel
-            logging.exception("Impossible de shuffle QUESTIONS")
-        self.game_state["total_questions"] = len(QUESTIONS)
-        self.game_state["current_question_index"] = 0
+        # Filtrer pour exclure les questions déjà utilisées
+        available_questions = [
+            q for q in all_questions
+            if q["id"] not in self.game_state["used_question_ids"]
+        ]
 
-        if len(QUESTIONS) == 0:
+        # Si toutes les questions ont été utilisées, afficher un message
+        if len(available_questions) == 0:
             await self.broadcast({
                 "type": "error",
-                "message": "Aucune question n'a été ajoutée ! Ajoutez des questions avant de commencer."
+                "message": "Toutes les questions ont déjà été posées ! Ajoutez de nouvelles questions ou redémarrez le serveur."
             })
             # Réinitialiser les joueurs prêts
             self.game_state["ready_players"].clear()
@@ -195,6 +193,19 @@ class ConnectionManager:
                 "total_count": len(self.active_connections)
             })
             return
+
+        # Assigner les questions disponibles
+        global QUESTIONS
+        QUESTIONS = available_questions
+
+        # Mélanger l'ordre des questions pour cette partie
+        try:
+            random.shuffle(QUESTIONS)
+        except Exception:
+            # si shuffle échoue, on laisse l'ordre tel quel
+            logging.exception("Impossible de shuffle QUESTIONS")
+        self.game_state["total_questions"] = len(QUESTIONS)
+        self.game_state["current_question_index"] = 0
 
         self.game_state["game_started"] = True
 
@@ -209,6 +220,10 @@ class ConnectionManager:
 
         current_question = self.get_current_question()
         if current_question:
+            # Marquer cette question comme utilisée
+            if "id" in current_question:
+                self.game_state["used_question_ids"].add(current_question["id"])
+
             await self.broadcast({
                 "type": "question",
                 "data": current_question,
@@ -263,6 +278,10 @@ class ConnectionManager:
         current_question = self.get_current_question()
 
         if current_question:
+            # Marquer cette question comme utilisée
+            if "id" in current_question:
+                self.game_state["used_question_ids"].add(current_question["id"])
+
             # Envoyer la nouvelle question
             await self.broadcast({
                 "type": "question",
@@ -303,10 +322,13 @@ class ConnectionManager:
             self.game_state["players"][player_id]["last_answer"] = ""
             self.game_state["players"][player_id]["answered"] = False
 
-        # Recharger les questions
+        # NE PAS réinitialiser used_question_ids pour garder l'historique des questions
+        # Les questions utilisées restent marquées même après reset
+
+        # Recharger les questions (elles seront filtrées dans start_game)
         global QUESTIONS
-        QUESTIONS = db_load_questions()
-        self.game_state["total_questions"] = len(QUESTIONS)
+        all_questions = db_load_questions()
+        self.game_state["total_questions"] = len(all_questions)
 
     async def check_answer(self, player_id: str, answer: str, time_left: int):
         # Vérifier si le joueur a déjà trouvé la bonne réponse
@@ -337,8 +359,8 @@ class ConnectionManager:
             self.game_state["players"][player_id]["score"] += points
             await self.broadcast_leaderboard()
 
-            # Vérifier si le joueur a gagné (100 points)
-            if self.game_state["players"][player_id]["score"] >= 100:
+            # Vérifier si le joueur a gagné (300 points)
+            if self.game_state["players"][player_id]["score"] >= 300:
                 await self.broadcast({
                     "type": "winner",
                     "player_name": self.game_state["players"][player_id]["name"],
