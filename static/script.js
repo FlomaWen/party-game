@@ -199,6 +199,10 @@ function handleMessage(message) {
             if (message.correct) {
                 // Bonne réponse - bloquer les nouvelles tentatives
                 showFeedback(true, message.message);
+                // Afficher l'indicateur de points gagnés
+                if (message.points) {
+                    showPointsIndicator(message.points);
+                }
                 canAnswer = false;
                 // Désactiver temporairement l'input
                 document.getElementById('answer-input').disabled = true;
@@ -491,10 +495,20 @@ function updateLeaderboard(leaderboard) {
         else if (index === 1) item.classList.add('second');
         else if (index === 2) item.classList.add('third');
 
+        // Afficher la dernière réponse si elle existe
+        let lastAnswerHTML = '';
+        if (player.last_answer && player.last_answer.trim() !== '') {
+            const answerClass = player.answered ? 'answer-correct' : 'answer-incorrect';
+            lastAnswerHTML = `<div class="player-last-answer ${answerClass}">${player.last_answer}</div>`;
+        }
+
         item.innerHTML = `
-            <span>
+            <span class="player-info">
                 <span class="player-rank">${index + 1}.</span>
-                ${player.name}
+                <span class="player-name-block">
+                    <div class="player-name-text">${player.name}</div>
+                    ${lastAnswerHTML}
+                </span>
             </span>
             <span class="player-score">${player.score} pts</span>
         `;

@@ -78,7 +78,9 @@ class ConnectionManager:
         self.active_connections[player_id] = websocket
         self.game_state["players"][player_id] = {
             "name": f"Joueur {len(self.active_connections)}",
-            "score": 0
+            "score": 0,
+            "last_answer": "",
+            "answered": False
         }
         await self.broadcast_leaderboard()
 
@@ -115,7 +117,12 @@ class ConnectionManager:
     async def broadcast_leaderboard(self):
         # Créer le leaderboard trié par score
         leaderboard = [
-            {"name": player["name"], "score": player["score"]}
+            {
+                "name": player["name"],
+                "score": player["score"],
+                "last_answer": player.get("last_answer", ""),
+                "answered": player.get("answered", False)
+            }
             for player in self.game_state["players"].values()
         ]
         leaderboard.sort(key=lambda x: x["score"], reverse=True)
@@ -248,6 +255,11 @@ class ConnectionManager:
         self.game_state["current_question_index"] += 1
         self.game_state["answered_players"].clear()
 
+        # Réinitialiser les réponses pour la nouvelle question
+        for player_id in self.game_state["players"]:
+            self.game_state["players"][player_id]["last_answer"] = ""
+            self.game_state["players"][player_id]["answered"] = False
+
         current_question = self.get_current_question()
 
         if current_question:
@@ -285,9 +297,11 @@ class ConnectionManager:
         self.game_state["ready_players"].clear()
         self.game_state["game_started"] = False
 
-        # Reset les scores des joueurs
+        # Reset les scores et réponses des joueurs
         for player_id in self.game_state["players"]:
             self.game_state["players"][player_id]["score"] = 0
+            self.game_state["players"][player_id]["last_answer"] = ""
+            self.game_state["players"][player_id]["answered"] = False
 
         # Recharger les questions
         global QUESTIONS
@@ -307,6 +321,8 @@ class ConnectionManager:
         if answer.lower().strip() == current_question["answer"].lower().strip():
             # Marquer le joueur comme ayant trouvé la bonne réponse
             self.game_state["answered_players"].add(player_id)
+            self.game_state["players"][player_id]["answered"] = True
+            self.game_state["players"][player_id]["last_answer"] = "Réponse trouvée ✓"
 
             # Calculer les points selon le temps restant
             if time_left >= 7:
@@ -331,7 +347,10 @@ class ConnectionManager:
 
             return {"correct": True, "message": f"Bonne réponse ! +{points} pts 🎉", "points": points}
 
-        # Mauvaise réponse - le joueur peut réessayer
+        # Mauvaise réponse - sauvegarder et le joueur peut réessayer
+        self.game_state["players"][player_id]["last_answer"] = answer
+        self.game_state["players"][player_id]["answered"] = False
+        await self.broadcast_leaderboard()
         return {"correct": False, "message": "Mauvaise réponse... Réessaie ! ❌", "can_retry": True}
 
 manager = ConnectionManager()
@@ -551,11 +570,14 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
 
             if message["type"] == "answer":
                 result = await manager.check_answer(player_id, message["answer"], message.get("time_left", 0))
-                await manager.send_personal_message(json.dumps({
+                response = {
                     "type": "answer_result",
                     "correct": result["correct"],
                     "message": result["message"]
-                }), websocket)
+                }
+                if "points" in result:
+                    response["points"] = result["points"]
+                await manager.send_personal_message(json.dumps(response), websocket)
 
             elif message["type"] == "set_name":
                 if player_id in manager.game_state["players"]:
