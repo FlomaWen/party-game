@@ -12,6 +12,7 @@ from pathlib import Path
 import logging
 import cloudinary
 import cloudinary.uploader
+import random
 
 # ✨ NOUVEAU : Import de la gestion de la base de données
 from database import load_questions as db_load_questions, save_question as db_save_question, delete_question as db_delete_question
@@ -164,6 +165,13 @@ class ConnectionManager:
         # Recharger les questions depuis la base de données
         global QUESTIONS
         QUESTIONS = db_load_questions()
+
+        # Mélanger l'ordre des questions pour cette partie
+        try:
+            random.shuffle(QUESTIONS)
+        except Exception:
+            # si shuffle échoue, on laisse l'ordre tel quel
+            logging.exception("Impossible de shuffle QUESTIONS")
         self.game_state["total_questions"] = len(QUESTIONS)
         self.game_state["current_question_index"] = 0
 

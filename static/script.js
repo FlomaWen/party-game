@@ -312,6 +312,9 @@ function showWaitingPhase(message) {
 
     // Afficher un message
     showFeedback(true, message);
+
+    // Afficher la modal de prêt
+    showReadyModal();
 }
 
 // Mettre à jour le statut "Prêt"
@@ -431,6 +434,9 @@ function showWinner(playerName, score) {
 
     // Marquer que le jeu est terminé
     localStorage.setItem('gameEnded', 'true');
+
+    // Afficher le modal de redémarrage au lieu de réinitialiser automatiquement
+    showRestartModal();
 }
 
 // Afficher fin de jeu
@@ -466,6 +472,9 @@ function showGameOver(message, winner) {
 
     // Marquer que le jeu est terminé
     localStorage.setItem('gameEnded', 'true');
+
+    // Afficher le modal de redémarrage au lieu de réinitialiser automatiquement
+    showRestartModal();
 }
 
 // Mettre à jour le leaderboard
@@ -900,3 +909,117 @@ function updateAdminButtonState() {
         adminBtn.classList.remove('admin-active');
     }
 }
+
+// Réinitialise l'état client comme si on venait d'arriver sur la page
+function resetToInitialState() {
+    console.log('Reset client: clearing local state and reloading page');
+
+    // Fermer la WebSocket proprement
+    try {
+        if (ws) {
+            try { ws.close(); } catch (e) { console.warn('ws close error', e); }
+            ws = null;
+        }
+    } catch (e) {
+        console.warn('Error closing websocket during reset', e);
+    }
+
+    // Effacer les données locales liées au joueur
+    localStorage.removeItem('playerName');
+    localStorage.removeItem('adminCode');
+    localStorage.removeItem('gameEnded');
+
+    // Réinitialiser variables en mémoire (sécuritaire)
+    playerName = null;
+    isAdmin = false;
+    isReady = false;
+    gameStarted = false;
+    canAnswer = true;
+
+    // Recharger la page pour repartir à zéro (le code au chargement demandera le nom)
+    setTimeout(() => {
+        location.reload();
+    }, 250);
+}
+
+// Modal handling
+function showRestartModal() {
+    const modal = document.getElementById('restart-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+}
+
+function hideRestartModal() {
+    const modal = document.getElementById('restart-modal');
+    if (!modal) return;
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+}
+
+// Wire modal buttons
+document.addEventListener('DOMContentLoaded', () => {
+    const confirmBtn = document.getElementById('restart-confirm');
+    const cancelBtn = document.getElementById('restart-cancel');
+
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', () => {
+            hideRestartModal();
+            resetToInitialState();
+        });
+    }
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+            hideRestartModal();
+            // Keep user on the page; allow them to review leaderboard
+        });
+    }
+});
+
+// Ready modal handling
+function showReadyModal() {
+    const modal = document.getElementById('ready-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+}
+
+function hideReadyModal() {
+    const modal = document.getElementById('ready-modal');
+    if (!modal) return;
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+}
+
+// wire ready modal buttons
+document.addEventListener('DOMContentLoaded', () => {
+    const readyConfirm = document.getElementById('ready-confirm');
+    const readyCancel = document.getElementById('ready-cancel');
+    if (readyConfirm) {
+        readyConfirm.addEventListener('click', () => {
+            hideReadyModal();
+            // set ready and send ws message
+            if (!isReady && isConnected && ws && ws.readyState === WebSocket.OPEN) {
+                isReady = true;
+                const readyBtn = document.getElementById('ready-btn');
+                if (readyBtn) { readyBtn.classList.add('clicked'); readyBtn.textContent = 'Prêt ! ✓'; readyBtn.disabled = true; }
+                ws.send(JSON.stringify({ type: 'ready' }));
+            }
+        });
+    }
+    if (readyCancel) {
+        readyCancel.addEventListener('click', () => {
+            hideReadyModal();
+        });
+    }
+
+    // override ready button behaviour to open modal
+    const readyBtn = document.getElementById('ready-btn');
+    if (readyBtn) {
+        readyBtn.addEventListener('click', (e) => {
+            // if already clicked, do nothing
+            if (isReady) return;
+            showReadyModal();
+        });
+    }
+});

@@ -6,6 +6,36 @@
     <meta http-equiv="Content-Security-Policy" content="img-src 'self' https: data:; default-src 'self' 'unsafe-inline' 'unsafe-eval' https: wss: ws:;">
     <title>Party Game by Flo</title>
     <link rel="stylesheet" href="/static/style.css">
+    <!-- Modal styles minimal -->
+    <style>
+        .restart-modal {
+            display: none;
+            position: fixed;
+            left: 0; right: 0; top: 0; bottom: 0;
+            background: rgba(0,0,0,0.6);
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .restart-modal .card {
+            background: #fff;
+            padding: 1.5rem;
+            border-radius: 8px;
+            max-width: 420px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .restart-modal .actions {
+            margin-top: 1rem;
+            display: flex;
+            gap: 0.5rem;
+            justify-content: center;
+        }
+        .restart-modal button { padding: 0.5rem 1rem; border-radius: 6px; border: none; cursor: pointer; }
+        .restart-confirm { background: #1976d2; color: #fff; }
+        .restart-cancel { background: #e0e0e0; color: #111; }
+    </style>
 </head>
 <body>
 <div class="container">
@@ -97,6 +127,30 @@
         <span id="status-text">Connexion...</span>
         <span id="player-name-display" class="player-name-display"></span>
         <button id="change-name-btn" class="change-name-btn">✏️ Changer mon nom</button>
+    </div>
+</div>
+
+<!-- Restart confirmation modal -->
+<div id="restart-modal" class="restart-modal" role="dialog" aria-hidden="true">
+    <div class="card">
+        <h3>La partie est terminée</h3>
+        <p>Voulez-vous recommencer la partie comme si vous veniez d'arriver&nbsp;?</p>
+        <div class="actions">
+            <button id="restart-confirm" class="restart-confirm">Recommencer</button>
+            <button id="restart-cancel" class="restart-cancel">Rester</button>
+        </div>
+    </div>
+</div>
+
+<!-- Ready confirmation modal -->
+<div id="ready-modal" class="restart-modal" role="dialog" aria-hidden="true" style="display:none">
+    <div class="card">
+        <h3>Prêt pour la prochaine question ?</h3>
+        <p>Appuyez sur <strong>Prêt</strong> quand vous êtes prêt(e) pour la suite.</p>
+        <div class="actions">
+            <button id="ready-confirm" class="restart-confirm">Prêt</button>
+            <button id="ready-cancel" class="restart-cancel">Pas encore</button>
+        </div>
     </div>
 </div>
 
