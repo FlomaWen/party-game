@@ -10,20 +10,29 @@ import os
 import shutil
 from pathlib import Path
 import logging
+import cloudinary
+import cloudinary.uploader
+
+# ✨ NOUVEAU : Import de la gestion de la base de données
+from database import load_questions as db_load_questions, save_question as db_save_question, delete_question as db_delete_question
+
+# ✨ Configuration Cloudinary
+CLOUDINARY_URL = os.getenv("CLOUDINARY_URL")
+if CLOUDINARY_URL:
+    cloudinary.config(url=CLOUDINARY_URL)
+    print("✅ Cloudinary configuré")
+else:
+    print("⚠️ CLOUDINARY_URL non définie")
 
 # Configuration des logs
-# Désactiver les logs détaillés en production (sur Render)
-IS_PRODUCTION = os.getenv("RENDER") is not None or os.getenv("PORT") is not None
+IS_PRODUCTION = os.getenv("RENDER") is not None or os.getenv("PORT") is not None or os.getenv("RAILWAY_ENVIRONMENT") is not None
 if IS_PRODUCTION:
-    # En production : logs minimaux
     logging.basicConfig(level=logging.WARNING)
 else:
-    # En local : logs complets
     logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(
     title="Party Game",
-    # Désactiver la documentation en production pour plus de sécurité
     docs_url=None if IS_PRODUCTION else "/docs",
     redoc_url=None if IS_PRODUCTION else "/redoc"
 )
@@ -31,7 +40,7 @@ app = FastAPI(
 # Configuration CORS pour permettre le chargement des images externes
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permet toutes les origines
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -42,51 +51,9 @@ class Question(BaseModel):
     image: str
     question: str
     answer: str
-    points: int = 10
 
-# Chemin vers le fichier JSON
-QUESTIONS_FILE = "questions.json"
-
-# Charger les questions depuis le fichier JSON
-def load_questions():
-    if os.path.exists(QUESTIONS_FILE):
-        try:
-            with open(QUESTIONS_FILE, "r", encoding="utf-8") as f:
-                questions = json.load(f)
-                # Ajouter les IDs si manquants
-                for idx, q in enumerate(questions):
-                    if "id" not in q:
-                        q["id"] = idx + 1
-
-                # Log sécurisé (masquer les réponses en production)
-                if not IS_PRODUCTION:
-                    print(f"✅ {len(questions)} questions chargées")
-                else:
-                    # En production : ne pas afficher le contenu
-                    logging.info(f"Questions loaded: {len(questions)}")
-
-                return questions
-        except Exception as e:
-            if not IS_PRODUCTION:
-                print(f"❌ Erreur de chargement: {e}")
-            else:
-                logging.error("Failed to load questions")
-            return []
-    return []
-
-# Sauvegarder les questions dans le fichier JSON
-def save_questions(questions):
-    with open(QUESTIONS_FILE, "w", encoding="utf-8") as f:
-        json.dump(questions, f, ensure_ascii=False, indent=2)
-
-    # Log sécurisé
-    if not IS_PRODUCTION:
-        print(f"💾 {len(questions)} questions sauvegardées")
-    else:
-        logging.info(f"Questions saved: {len(questions)}")
-
-# Questions du jeu (chargées depuis le fichier)
-QUESTIONS = load_questions()
+# ✨ NOUVEAU : Charger les questions depuis PostgreSQL/Neon (ou JSON en local)
+QUESTIONS = db_load_questions()
 
 # Gestionnaire de connexions
 class ConnectionManager:
@@ -194,9 +161,9 @@ class ConnectionManager:
         if self.game_state["game_started"]:
             return
 
-        # Recharger les questions depuis le fichier
+        # Recharger les questions depuis la base de données
         global QUESTIONS
-        QUESTIONS = load_questions()
+        QUESTIONS = db_load_questions()
         self.game_state["total_questions"] = len(QUESTIONS)
         self.game_state["current_question_index"] = 0
 
@@ -316,7 +283,7 @@ class ConnectionManager:
 
         # Recharger les questions
         global QUESTIONS
-        QUESTIONS = load_questions()
+        QUESTIONS = db_load_questions()
         self.game_state["total_questions"] = len(QUESTIONS)
 
     async def check_answer(self, player_id: str, answer: str, time_left: int):
@@ -334,13 +301,13 @@ class ConnectionManager:
             self.game_state["answered_players"].add(player_id)
 
             # Calculer les points selon le temps restant
-            if time_left >= 7:  # 10, 9, 8, 7 secondes (3 premières secondes)
+            if time_left >= 7:
                 points = 10
-            elif time_left >= 4:  # 6, 5, 4 secondes (6 premières secondes)
+            elif time_left >= 4:
                 points = 7
-            elif time_left >= 1:  # 3, 2, 1 secondes (9 premières secondes)
+            elif time_left >= 1:
                 points = 4
-            else:  # 0 seconde
+            else:
                 points = 2
 
             self.game_state["players"][player_id]["score"] += points
@@ -365,79 +332,97 @@ manager = ConnectionManager()
 ASSETS_DIR = Path("static/assets")
 ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 
-# API pour uploader une image
+# API pour uploader une image vers Cloudinary
 @app.post("/api/upload-image")
 async def upload_image(file: UploadFile = File(...)):
     try:
-        # Vérifier le type de fichier
         if not file.content_type in ["image/png", "image/jpeg", "image/jpg", "image/gif"]:
             raise HTTPException(status_code=400, detail="Seuls les fichiers PNG, JPG et GIF sont acceptés")
 
-        # Générer un nom de fichier unique basé sur le timestamp
-        import time
-        file_extension = file.filename.split('.')[-1]
-        unique_filename = f"question_{int(time.time())}_{os.urandom(4).hex()}.{file_extension}"
+        # Upload vers Cloudinary
+        if CLOUDINARY_URL:
+            result = cloudinary.uploader.upload(
+                file.file,
+                folder="party-game-questions",
+                resource_type="image"
+            )
+            image_url = result["secure_url"]
 
-        # Chemin complet du fichier
-        file_path = ASSETS_DIR / unique_filename
+            return JSONResponse(content={
+                "message": "Image uploadée avec succès sur Cloudinary",
+                "url": image_url
+            })
+        else:
+            # Fallback local si pas de Cloudinary (dev)
+            import time
+            file_extension = file.filename.split('.')[-1]
+            unique_filename = f"question_{int(time.time())}_{os.urandom(4).hex()}.{file_extension}"
+            file_path = ASSETS_DIR / unique_filename
 
-        # Sauvegarder le fichier
-        with file_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            with file_path.open("wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
 
-        return JSONResponse(content={
-            "message": "Image uploadée avec succès",
-            "filename": unique_filename
-        })
+            return JSONResponse(content={
+                "message": "Image uploadée localement",
+                "url": f"/static/assets/{unique_filename}"
+            })
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur lors de l'upload: {str(e)}")
 
-# API pour ajouter une question
+# ✨ NOUVEAU : API pour ajouter une question (avec PostgreSQL/Neon)
 @app.post("/api/questions")
 async def add_question(question: Question):
-    questions = load_questions()
-    new_question = {
-        "id": len(questions) + 1,
-        "image": question.image,
-        "question": question.question,
-        "answer": question.answer,
-        "points": question.points
-    }
-    questions.append(new_question)
-    save_questions(questions)
+    new_question = db_save_question(
+        image=question.image,
+        question_text=question.question,
+        answer=question.answer
+    )
 
-    # Mettre à jour le compteur global
-    global QUESTIONS
-    QUESTIONS = questions
+    if new_question:
+        global QUESTIONS
+        QUESTIONS = db_load_questions()
+        manager.game_state["total_questions"] = len(QUESTIONS)
 
-    return JSONResponse(content={"message": "Question ajoutée avec succès", "question": new_question})
+        return JSONResponse(content={
+            "message": "Question ajoutée avec succès",
+            "question": new_question
+        })
+    else:
+        raise HTTPException(status_code=500, detail="Erreur lors de l'ajout")
 
 # API pour obtenir toutes les questions
 @app.get("/api/questions")
 async def get_questions():
-    questions = load_questions()
+    questions = db_load_questions()
     return JSONResponse(content=questions)
 
 # API pour supprimer toutes les questions (reset)
 @app.delete("/api/questions")
 async def delete_all_questions():
-    save_questions([])
+    questions = db_load_questions()
+    for q in questions:
+        db_delete_question(q["id"])
+
     global QUESTIONS
     QUESTIONS = []
+    manager.game_state["total_questions"] = 0
+
     return JSONResponse(content={"message": "Toutes les questions ont été supprimées"})
 
-# API pour supprimer une question spécifique
+# ✨ NOUVEAU : API pour supprimer une question spécifique (avec PostgreSQL/Neon)
 @app.delete("/api/questions/{question_id}")
-async def delete_question(question_id: int):
-    questions = load_questions()
-    questions = [q for q in questions if q.get("id") != question_id]
-    # Réassigner les IDs
-    for idx, q in enumerate(questions):
-        q["id"] = idx + 1
-    save_questions(questions)
-    global QUESTIONS
-    QUESTIONS = questions
-    return JSONResponse(content={"message": "Question supprimée"})
+async def delete_question_api(question_id: int):
+    success = db_delete_question(question_id)
+
+    if success:
+        global QUESTIONS
+        QUESTIONS = db_load_questions()
+        manager.game_state["total_questions"] = len(QUESTIONS)
+
+        return JSONResponse(content={"message": "Question supprimée"})
+    else:
+        raise HTTPException(status_code=404, detail="Question non trouvée")
 
 # API pour reset le jeu
 @app.post("/api/reset-game")
@@ -461,7 +446,6 @@ async def get():
 async def websocket_endpoint(websocket: WebSocket, player_id: str):
     await manager.connect(websocket, player_id)
 
-    # Envoyer le statut initial du jeu
     await manager.send_personal_message(json.dumps({
         "type": "ready_status",
         "ready_count": len(manager.game_state["ready_players"]),
@@ -469,7 +453,6 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
         "total_questions": manager.game_state["total_questions"]
     }), websocket)
 
-    # Si le jeu a déjà commencé, envoyer la question en cours
     if manager.game_state["game_started"]:
         current_question = manager.get_current_question()
         if current_question:
@@ -494,10 +477,8 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                 }), websocket)
 
             elif message["type"] == "set_name":
-                # Mettre à jour le nom du joueur
                 if player_id in manager.game_state["players"]:
                     manager.game_state["players"][player_id]["name"] = message["name"]
-                    # Envoyer le leaderboard mis à jour à tous
                     await manager.broadcast_leaderboard()
 
             elif message["type"] == "ready":
@@ -507,12 +488,9 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
         await manager.disconnect(player_id)
         await manager.broadcast_leaderboard()
 
-# Monter le dossier static pour servir les fichiers CSS, JS, images
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    # Utilise la variable PORT fournie par Render (ou 8000 en local)
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
-

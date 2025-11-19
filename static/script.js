@@ -571,14 +571,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('form-question-image');
     const fileNameDisplay = document.getElementById('file-name');
 
-    fileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            fileNameDisplay.textContent = file.name;
-        } else {
-            fileNameDisplay.textContent = 'Aucun fichier sélectionné';
-        }
-    });
+    if (fileInput && fileNameDisplay) {
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                fileNameDisplay.textContent = file.name;
+            } else {
+                fileNameDisplay.textContent = 'Aucun fichier sélectionné';
+            }
+        });
+    }
+
 
     // Bouton "Ajouter question"
     const addQuestionBtn = document.getElementById('add-question-btn');
@@ -754,7 +757,7 @@ async function addQuestion() {
         addBtn.disabled = true;
         addBtn.textContent = '⏳ Upload en cours...';
 
-        // Étape 1: Upload de l'image
+        // Étape 1: Upload de l'image vers Cloudinary
         const formData = new FormData();
         formData.append('file', file);
 
@@ -768,19 +771,18 @@ async function addQuestion() {
         }
 
         const uploadResult = await uploadResponse.json();
-        const imageName = uploadResult.filename;
+        const imageUrl = uploadResult.url; // URL Cloudinary ou locale
 
-        // Étape 2: Créer la question avec le nom de l'image
+        // Étape 2: Créer la question avec l'URL
         const questionResponse = await fetch('/api/questions', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                image: imageName,
+                image: imageUrl,
                 question: question,
-                answer: answer,
-                points: 10
+                answer: answer
             })
         });
 
