@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, File, UploadFile, Body
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, File, UploadFile, Body, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -372,37 +372,85 @@ async def upload_image(file: UploadFile = File(...)):
 
 # ✨ NOUVEAU : API pour ajouter une question (avec PostgreSQL/Neon)
 @app.post("/api/questions")
-async def add_question(payload: dict = Body(...)):
-    """Ajoute une question depuis un JSON brut. Faire une validation explicite pour renvoyer des erreurs claires.
-    On évite ainsi les 422 silencieux si le client envoie un payload inattendu.
+async def add_question(request: Request, payload: dict | None = Body(None)):
+    """Ajoute une question. Tente d'extraire les champs depuis JSON ou depuis form-data.
+    Retourne des erreurs explicites et loggue le payload reçu pour faciliter le debug.
     """
-    # Récupérer les champs
-    image = payload.get("image")
-    question_text = payload.get("question")
-    answer = payload.get("answer")
+    try:
+        # 1) Essayer de lire JSON proprement
+        data: dict = {}
+        if payload and isinstance(payload, dict):
+            data = payload
+        else:
+            try:
+                data = await request.json()
+                if not isinstance(data, dict):
+                    data = {}
+            except Exception:
+                data = {}
 
-    # Validation simple
-    if not image or not isinstance(image, str) or not image.strip():
-        raise HTTPException(status_code=400, detail="Champ 'image' manquant ou invalide")
-    if not question_text or not isinstance(question_text, str) or not question_text.strip():
-        raise HTTPException(status_code=400, detail="Champ 'question' manquant ou invalide")
-    if not answer or not isinstance(answer, str) or not answer.strip():
-        raise HTTPException(status_code=400, detail="Champ 'answer' manquant ou invalide")
+        # 2) Si les champs essentiels manquent, tenter de lire form-data
+        if not any(k in data for k in ("image", "question", "answer", "url", "secure_url")):
+            try:
+                form = await request.form()
+                # form may contain UploadFile or str values
+                for k, v in form.items():
+                    if hasattr(v, 'filename'):
+                        # upload fields become UploadFile; we keep filename (but image URL should come from upload endpoint)
+                        data[k] = v.filename
+                    else:
+                        data[k] = str(v)
+            except Exception:
+                # ignore form parsing errors
+                pass
 
-    # Sauvegarder en base
-    new_question = db_save_question(image=image.strip(), question_text=question_text.strip(), answer=answer.strip())
+        # 3) Log keys and raw body for debugging
+        try:
+            raw_body = (await request.body()).decode('utf-8', errors='replace')
+        except Exception:
+            raw_body = ''
+        logging.info(f"Received /api/questions payload keys: {list(data.keys())}, raw_body={raw_body}")
 
-    if new_question:
-        global QUESTIONS
-        QUESTIONS = db_load_questions()
-        manager.game_state["total_questions"] = len(QUESTIONS)
+        # 4) Support multiple key names for image
+        image = (data.get("image") or data.get("url") or data.get("image_url") or data.get("secure_url") or data.get("imageUrl"))
+        question_text = data.get("question") or data.get("question_text")
+        answer = data.get("answer")
 
-        return JSONResponse(content={
-            "message": "Question ajoutée avec succès",
-            "question": new_question
-        })
+        # 5) Validation simple
+        if not image or not isinstance(image, str) or not image.strip():
+            logging.warning(f"Invalid /api/questions payload (missing/invalid image): {data}")
+            raise HTTPException(status_code=400, detail="Champ 'image' manquant ou invalide")
+        if not question_text or not isinstance(question_text, str) or not question_text.strip():
+            logging.warning(f"Invalid /api/questions payload (missing/invalid question): {data}")
+            raise HTTPException(status_code=400, detail="Champ 'question' manquant ou invalide")
+        if not answer or not isinstance(answer, str) or not answer.strip():
+            logging.warning(f"Invalid /api/questions payload (missing/invalid answer): {data}")
+            raise HTTPException(status_code=400, detail="Champ 'answer' manquant ou invalide")
 
-    raise HTTPException(status_code=500, detail="Erreur lors de l'ajout en base")
+        # Trim values
+        image = image.strip()
+        question_text = question_text.strip()
+        answer = answer.strip()
+
+        # Sauvegarder en base
+        new_question = db_save_question(image=image, question_text=question_text, answer=answer)
+
+        if new_question:
+            global QUESTIONS
+            QUESTIONS = db_load_questions()
+            manager.game_state["total_questions"] = len(QUESTIONS)
+
+            return JSONResponse(content={"message": "Question ajoutée avec succès", "question": new_question})
+
+        logging.error(f"Failed to insert question into DB, payload: {data}")
+        raise HTTPException(status_code=500, detail="Erreur lors de l'ajout en base")
+
+    except HTTPException:
+        # laisser passer les erreurs HTTP explicites
+        raise
+    except Exception as e:
+        logging.exception("Unexpected error in /api/questions")
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 # API pour obtenir toutes les questions
 @app.get("/api/questions")
