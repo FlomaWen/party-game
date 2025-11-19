@@ -771,7 +771,12 @@ async function addQuestion() {
         }
 
         const uploadResult = await uploadResponse.json();
-        const imageUrl = uploadResult.url; // URL Cloudinary ou locale
+        // Supporter différentes formes de réponse (url, filename, secure_url)
+        const imageUrl = uploadResult.url || uploadResult.filename || uploadResult.secure_url;
+
+        if (!imageUrl) {
+            throw new Error('Upload OK mais aucune URL de l\'image retournée par le serveur');
+        }
 
         // Étape 2: Créer la question avec l'URL
         const questionResponse = await fetch('/api/questions', {
@@ -877,4 +882,3 @@ function updateAdminButtonState() {
         adminBtn.classList.remove('admin-active');
     }
 }
-

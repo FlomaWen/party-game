@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, File, UploadFile
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, File, UploadFile, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -372,12 +372,25 @@ async def upload_image(file: UploadFile = File(...)):
 
 # ✨ NOUVEAU : API pour ajouter une question (avec PostgreSQL/Neon)
 @app.post("/api/questions")
-async def add_question(question: Question):
-    new_question = db_save_question(
-        image=question.image,
-        question_text=question.question,
-        answer=question.answer
-    )
+async def add_question(payload: dict = Body(...)):
+    """Ajoute une question depuis un JSON brut. Faire une validation explicite pour renvoyer des erreurs claires.
+    On évite ainsi les 422 silencieux si le client envoie un payload inattendu.
+    """
+    # Récupérer les champs
+    image = payload.get("image")
+    question_text = payload.get("question")
+    answer = payload.get("answer")
+
+    # Validation simple
+    if not image or not isinstance(image, str) or not image.strip():
+        raise HTTPException(status_code=400, detail="Champ 'image' manquant ou invalide")
+    if not question_text or not isinstance(question_text, str) or not question_text.strip():
+        raise HTTPException(status_code=400, detail="Champ 'question' manquant ou invalide")
+    if not answer or not isinstance(answer, str) or not answer.strip():
+        raise HTTPException(status_code=400, detail="Champ 'answer' manquant ou invalide")
+
+    # Sauvegarder en base
+    new_question = db_save_question(image=image.strip(), question_text=question_text.strip(), answer=answer.strip())
 
     if new_question:
         global QUESTIONS
@@ -388,8 +401,8 @@ async def add_question(question: Question):
             "message": "Question ajoutée avec succès",
             "question": new_question
         })
-    else:
-        raise HTTPException(status_code=500, detail="Erreur lors de l'ajout")
+
+    raise HTTPException(status_code=500, detail="Erreur lors de l'ajout en base")
 
 # API pour obtenir toutes les questions
 @app.get("/api/questions")
