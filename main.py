@@ -419,13 +419,25 @@ async def add_question(request: Request, payload: dict | None = Body(None)):
         # 5) Validation simple
         if not image or not isinstance(image, str) or not image.strip():
             logging.warning(f"Invalid /api/questions payload (missing/invalid image): {data}")
-            raise HTTPException(status_code=400, detail="Champ 'image' manquant ou invalide")
+            return JSONResponse(status_code=400, content={
+                "detail": "Champ 'image' manquant ou invalide",
+                "received_keys": list(data.keys()),
+                "raw_body": raw_body
+            })
         if not question_text or not isinstance(question_text, str) or not question_text.strip():
             logging.warning(f"Invalid /api/questions payload (missing/invalid question): {data}")
-            raise HTTPException(status_code=400, detail="Champ 'question' manquant ou invalide")
+            return JSONResponse(status_code=400, content={
+                "detail": "Champ 'question' manquant ou invalide",
+                "received_keys": list(data.keys()),
+                "raw_body": raw_body
+            })
         if not answer or not isinstance(answer, str) or not answer.strip():
             logging.warning(f"Invalid /api/questions payload (missing/invalid answer): {data}")
-            raise HTTPException(status_code=400, detail="Champ 'answer' manquant ou invalide")
+            return JSONResponse(status_code=400, content={
+                "detail": "Champ 'answer' manquant ou invalide",
+                "received_keys": list(data.keys()),
+                "raw_body": raw_body
+            })
 
         # Trim values
         image = image.strip()

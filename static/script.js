@@ -774,22 +774,25 @@ async function addQuestion() {
         // Supporter différentes formes de réponse (url, filename, secure_url)
         const imageUrl = uploadResult.url || uploadResult.filename || uploadResult.secure_url;
 
+        // DEBUG: log upload result and resolved imageUrl
+        console.log('uploadResult:', uploadResult);
+        console.log('resolved imageUrl:', imageUrl);
+
         if (!imageUrl) {
             throw new Error('Upload OK mais aucune URL de l\'image retournée par le serveur');
         }
 
         // Étape 2: Créer la question avec l'URL
+        const payload = { image: imageUrl, question: question, answer: answer };
+        console.log('POST /api/questions payload:', payload);
+
         const questionResponse = await fetch('/api/questions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                image: imageUrl,
-                question: question,
-                answer: answer
-            })
-        });
+             method: 'POST',
+             headers: {
+                 'Content-Type': 'application/json'
+             },
+             body: JSON.stringify(payload)
+         });
 
         if (questionResponse.ok) {
             // Vider les champs
@@ -804,7 +807,22 @@ async function addQuestion() {
             // Afficher un message de succès
             showFeedback(true, 'Question ajoutée avec succès ! ✅');
         } else {
-            throw new Error('Erreur lors de l\'ajout de la question');
+            // Lire le corps de la réponse pour obtenir les détails d'erreur envoyés par le serveur
+            const text = await questionResponse.text();
+            let details = text;
+            try {
+                details = JSON.parse(text);
+            } catch (e) {
+                // not JSON
+            }
+            console.error('POST /api/questions failed', questionResponse.status, details);
+            // Afficher le message détaillé si présent
+            const detailMsg = (details && (details.detail || details.message)) || JSON.stringify(details);
+            showFeedback(false, `Erreur lors de l'ajout de la question ❌ (${detailMsg})`);
+            // Réactiver le bouton et sortir
+            addBtn.disabled = false;
+            addBtn.textContent = '➕ Ajouter la question';
+            return;
         }
     } catch (error) {
         console.error('Erreur lors de l\'ajout de la question:', error);
