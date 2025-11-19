@@ -568,6 +568,7 @@ async def get():
 async def websocket_endpoint(websocket: WebSocket, player_id: str):
     await manager.connect(websocket, player_id)
 
+    # Envoyer le statut de préparation et le nombre total de questions
     await manager.send_personal_message(json.dumps({
         "type": "ready_status",
         "ready_count": len(manager.game_state["ready_players"]),
@@ -575,14 +576,40 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
         "total_questions": manager.game_state["total_questions"]
     }), websocket)
 
+    # Si le jeu est en cours, envoyer la question actuelle au nouveau joueur
     if manager.game_state["game_started"]:
         current_question = manager.get_current_question()
         if current_question:
+            # Envoyer d'abord le signal de démarrage du jeu
+            await manager.send_personal_message(json.dumps({
+                "type": "game_start",
+                "total_questions": manager.game_state["total_questions"]
+            }), websocket)
+
+            # Puis envoyer la question en cours
             await manager.send_personal_message(json.dumps({
                 "type": "question",
                 "data": current_question,
                 "question_number": manager.game_state["current_question_index"] + 1,
                 "total_questions": manager.game_state["total_questions"]
+            }), websocket)
+
+            # Envoyer le leaderboard actuel
+            await manager.send_personal_message(json.dumps({
+                "type": "leaderboard_update",
+                "leaderboard": [
+                    {
+                        "name": player["name"],
+                        "score": player["score"],
+                        "last_answer": player.get("last_answer", ""),
+                        "answered": player.get("answered", False)
+                    }
+                    for player in sorted(
+                        manager.game_state["players"].values(),
+                        key=lambda x: x["score"],
+                        reverse=True
+                    )
+                ]
             }), websocket)
 
     try:
